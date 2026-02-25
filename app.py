@@ -21,6 +21,7 @@ import time
 import csv
 import os
 import socket
+import struct
 import threading
 from datetime import datetime
 from collections import deque
@@ -29,14 +30,14 @@ import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
-PRINTER_IP    = os.environ.get("PRINTER_IP", "10.8.103.8")
-ACCESS_CODE   = os.environ.get("ACCESS_CODE", "962473bf")
-SERIAL_NUMBER = os.environ.get("SERIAL_NUMBER", "03919D532701879")
+PRINTER_IP    = os.environ.get("PRINTER_IP", "")
+ACCESS_CODE   = os.environ.get("ACCESS_CODE", "")
+SERIAL_NUMBER = os.environ.get("SERIAL_NUMBER", "")
 
 MQTT_PORT      = 8883
 MQTT_TOPIC_SUB = f"device/{SERIAL_NUMBER}/report"
 MQTT_TOPIC_PUB = f"device/{SERIAL_NUMBER}/request"
-CAMERA_URL     = f"rtsps://bblp:{ACCESS_CODE}@{PRINTER_IP}:322/streaming/live/1"
+CAMERA_PORT    = 6000
 
 LOG_FILE       = "print_telemetry.csv"
 FAILURE_DIR    = "failure_snapshots"
@@ -289,88 +290,147 @@ class WarpDetector:
         ratio = score / (self.baseline + 1e-6)
         return ratio > (1.0 + self.threshold), ratio
 
+# ── CAMERA AUTH ───────────────────────────────────────────────────────────────
+JPEG_START = bytes([0xFF, 0xD8, 0xFF, 0xE0])
+JPEG_END   = bytes([0xFF, 0xD9])
+
+def create_camera_auth(access_code: str) -> bytes:
+    """Build the 80-byte auth payload for Bambu A1 camera (port 6000)."""
+    auth = bytearray(80)
+    struct.pack_into('<I', auth, 0, 0x40)
+    struct.pack_into('<I', auth, 4, 0x3000)
+    auth[16:16 + 4] = b'bblp'
+    code = access_code.encode('utf-8')
+    auth[48:48 + len(code)] = code
+    return bytes(auth)
+
 # ── VISION THREAD ─────────────────────────────────────────────────────────────
 def check_camera_port():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.settimeout(3)
-        s.connect((PRINTER_IP, 322))
+        s.connect((PRINTER_IP, CAMERA_PORT))
         s.close()
         return True
     except (socket.timeout, OSError):
         return False
 
+def read_exact(sock, n):
+    """Read exactly n bytes from a TLS socket."""
+    buf = bytearray()
+    while len(buf) < n:
+        try:
+            chunk = sock.recv(n - len(buf))
+            if not chunk:
+                return None
+            buf.extend(chunk)
+        except ssl.SSLWantReadError:
+            time.sleep(0.05)
+    return bytes(buf)
+
 def vision_thread():
     global latest_frame
 
+    tls_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    tls_ctx.check_hostname = False
+    tls_ctx.verify_mode = ssl.CERT_NONE
+    auth_data = create_camera_auth(ACCESS_CODE)
+
     while True:
         if not check_camera_port():
-            print("[Camera] Port 322 not available — retrying in 30s...")
+            print(f"[Camera] Port {CAMERA_PORT} not available — retrying in 30s...")
             time.sleep(30)
             continue
 
-        print(f"[Camera] Connecting to stream...")
-        cap = cv2.VideoCapture(CAMERA_URL)
+        sock = None
+        try:
+            print(f"[Camera] Connecting to {PRINTER_IP}:{CAMERA_PORT}...")
+            raw = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            raw.settimeout(10)
+            raw.connect((PRINTER_IP, CAMERA_PORT))
+            sock = tls_ctx.wrap_socket(raw)
+            sock.sendall(auth_data)
 
-        if not cap.isOpened():
-            print("[Camera] Could not open stream — retrying in 30s...")
-            time.sleep(30)
-            continue
+            print("[Camera] Authenticated, receiving frames")
+            camera_available.set()
+            os.makedirs(FAILURE_DIR, exist_ok=True)
 
-        print("[Camera] Stream connected")
-        camera_available.set()
-        os.makedirs(FAILURE_DIR, exist_ok=True)
+            spaghetti   = SpaghettiDetector(SPAGHETTI_SENSITIVITY)
+            layer_shift = LayerShiftDetector(LAYER_SHIFT_SENSITIVITY)
+            warp        = WarpDetector(WARP_SENSITIVITY)
+            trigger_counts = {"Spaghetti": 0, "LayerShift": 0, "Warp": 0}
 
-        spaghetti   = SpaghettiDetector(SPAGHETTI_SENSITIVITY)
-        layer_shift = LayerShiftDetector(LAYER_SHIFT_SENSITIVITY)
-        warp        = WarpDetector(WARP_SENSITIVITY)
+            while True:
+                # Read 16-byte frame header
+                header = read_exact(sock, 16)
+                if header is None:
+                    print("[Camera] Connection closed")
+                    break
 
-        trigger_counts = {"Spaghetti": 0, "LayerShift": 0, "Warp": 0}
+                payload_size = struct.unpack_from('<I', header, 0)[0]
+                if payload_size == 0 or payload_size > 5_000_000:
+                    continue
 
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                print("[Camera] Stream lost — reconnecting...")
-                camera_available.clear()
-                break
+                # Read JPEG payload
+                jpeg_data = read_exact(sock, payload_size)
+                if jpeg_data is None:
+                    print("[Camera] Connection lost during frame read")
+                    break
 
-            # Store latest frame for web endpoint
-            with frame_lock:
-                latest_frame = frame.copy()
+                # Validate JPEG
+                if not (jpeg_data[:4] == JPEG_START and jpeg_data[-2:] == JPEG_END):
+                    continue
 
-            sp_trig, sp_score = spaghetti.detect(frame)
-            ls_trig, ls_score = layer_shift.detect(frame)
-            wp_trig, wp_score = warp.detect(frame)
+                # Decode to OpenCV frame
+                np_arr = np.frombuffer(jpeg_data, dtype=np.uint8)
+                frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+                if frame is None:
+                    continue
 
-            results = {
-                "Spaghetti":  (sp_trig, sp_score),
-                "LayerShift": (ls_trig, ls_score),
-                "Warp":       (wp_trig, wp_score),
-            }
+                # Store latest frame for web endpoint
+                with frame_lock:
+                    latest_frame = frame.copy()
 
-            for name, (triggered, score) in results.items():
-                trigger_counts[name] = trigger_counts[name] + 1 if triggered else max(0, trigger_counts[name] - 1)
+                # Run detectors
+                sp_trig, sp_score = spaghetti.detect(frame)
+                ls_trig, ls_score = layer_shift.detect(frame)
+                wp_trig, wp_score = warp.detect(frame)
 
-            with vision_lock:
+                results = {
+                    "Spaghetti":  (sp_trig, sp_score),
+                    "LayerShift": (ls_trig, ls_score),
+                    "Warp":       (wp_trig, wp_score),
+                }
+
                 for name, (triggered, score) in results.items():
-                    vision_status[name]["triggered"] = triggered
-                    vision_status[name]["score"] = float(score)
-                    vision_status[name]["count"] = trigger_counts[name]
+                    trigger_counts[name] = trigger_counts[name] + 1 if triggered else max(0, trigger_counts[name] - 1)
 
-            if not print_paused.is_set():
-                for name, count in trigger_counts.items():
-                    if count >= TRIGGER_FRAMES:
-                        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        path = os.path.join(FAILURE_DIR, f"{name}_{ts}.jpg")
-                        cv2.imwrite(path, frame)
-                        print(f"[Snapshot] Saved: {path}")
-                        pause_print(name)
-                        trigger_counts[name] = 0
-                        break
+                with vision_lock:
+                    for name, (triggered, score) in results.items():
+                        vision_status[name]["triggered"] = triggered
+                        vision_status[name]["score"] = float(score)
+                        vision_status[name]["count"] = trigger_counts[name]
 
-            time.sleep(0.1)
+                if not print_paused.is_set():
+                    for name, count in trigger_counts.items():
+                        if count >= TRIGGER_FRAMES:
+                            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            path = os.path.join(FAILURE_DIR, f"{name}_{ts}.jpg")
+                            cv2.imwrite(path, frame)
+                            print(f"[Snapshot] Saved: {path}")
+                            pause_print(name)
+                            trigger_counts[name] = 0
+                            break
 
-        cap.release()
+        except Exception as e:
+            print(f"[Camera] Error: {e} — retrying in 5s...")
+        finally:
+            camera_available.clear()
+            if sock:
+                try:
+                    sock.close()
+                except Exception:
+                    pass
         time.sleep(5)
 
 # ── FLASK APP ─────────────────────────────────────────────────────────────────
@@ -440,6 +500,15 @@ def events():
 
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 def main():
+    missing = [v for v in ("PRINTER_IP", "ACCESS_CODE", "SERIAL_NUMBER")
+               if not os.environ.get(v)]
+    if missing:
+        print("ERROR: Missing required environment variables:")
+        for v in missing:
+            print(f"  - {v}")
+        print("\nCopy .env.example to .env and fill in your printer details.")
+        raise SystemExit(1)
+
     print("=" * 55)
     print("  BAMBU A1 WEB MONITOR")
     print(f"  Printer: {PRINTER_IP}  |  SN: {SERIAL_NUMBER}")

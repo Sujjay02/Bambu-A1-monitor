@@ -25,6 +25,8 @@ import json
 import time
 import csv
 import os
+import socket
+import struct
 import threading
 from datetime import datetime
 from collections import deque
@@ -39,7 +41,7 @@ SERIAL_NUMBER = "03919D532701879"
 MQTT_PORT      = 8883
 MQTT_TOPIC_SUB = f"device/{SERIAL_NUMBER}/report"
 MQTT_TOPIC_PUB = f"device/{SERIAL_NUMBER}/request"
-CAMERA_URL     = f"rtsps://bblp:{ACCESS_CODE}@{PRINTER_IP}:322/streaming/live/1"
+CAMERA_PORT    = 6000
 
 LOG_FILE       = "print_telemetry.csv"
 SAVE_FAILURES  = True
@@ -239,6 +241,33 @@ class WarpDetector:
         ratio = score / (self.baseline + 1e-6)
         return ratio > (1.0 + self.threshold), ratio
 
+# ── CAMERA AUTH ────────────────────────────────────────────────────────────────
+JPEG_START = bytes([0xFF, 0xD8, 0xFF, 0xE0])
+JPEG_END   = bytes([0xFF, 0xD9])
+
+def create_camera_auth(access_code: str) -> bytes:
+    """Build the 80-byte auth payload for Bambu A1 camera (port 6000)."""
+    auth = bytearray(80)
+    struct.pack_into('<I', auth, 0, 0x40)
+    struct.pack_into('<I', auth, 4, 0x3000)
+    auth[16:16 + 4] = b'bblp'
+    code = access_code.encode('utf-8')
+    auth[48:48 + len(code)] = code
+    return bytes(auth)
+
+def read_exact(sock, n):
+    """Read exactly n bytes from a TLS socket."""
+    buf = bytearray()
+    while len(buf) < n:
+        try:
+            chunk = sock.recv(n - len(buf))
+            if not chunk:
+                return None
+            buf.extend(chunk)
+        except ssl.SSLWantReadError:
+            time.sleep(0.05)
+    return bytes(buf)
+
 # ── OVERLAY ───────────────────────────────────────────────────────────────────
 def draw_overlay(frame, vision_results, trigger_counts):
     h, w = frame.shape[:2]
@@ -286,15 +315,28 @@ def vision_thread():
     mqtt_client.connect(PRINTER_IP, MQTT_PORT, keepalive=60)
     mqtt_client.loop_start()
 
-    print(f"[Camera] Connecting to {CAMERA_URL} ...")
-    cap = cv2.VideoCapture(CAMERA_URL)
+    tls_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    tls_ctx.check_hostname = False
+    tls_ctx.verify_mode = ssl.CERT_NONE
+    auth_data = create_camera_auth(ACCESS_CODE)
 
-    if not cap.isOpened():
-        print("[ERROR] Could not open camera stream.")
-        print("  Make sure: Settings → Network → LAN Mode Liveview → ON")
+    print(f"[Camera] Connecting to {PRINTER_IP}:{CAMERA_PORT}...")
+
+    sock = None
+    try:
+        raw = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        raw.settimeout(10)
+        raw.connect((PRINTER_IP, CAMERA_PORT))
+        sock = tls_ctx.wrap_socket(raw)
+        sock.sendall(auth_data)
+    except Exception as e:
+        print(f"[ERROR] Could not open camera stream: {e}")
+        print("  Make sure: Settings > Network > LAN Mode Liveview > ON")
+        mqtt_client.loop_stop()
+        mqtt_client.disconnect()
         return
 
-    print("[Camera] Stream connected ✅")
+    print("[Camera] Stream connected")
     os.makedirs(FAILURE_DIR, exist_ok=True)
 
     spaghetti   = SpaghettiDetector(SPAGHETTI_SENSITIVITY)
@@ -306,9 +348,27 @@ def vision_thread():
     print("[Vision] Running — press 'q' to quit, 'r' to reset triggers\n")
 
     while True:
-        ret, frame = cap.read()
-        if not ret:
-            time.sleep(0.5)
+        # Read 16-byte frame header
+        header = read_exact(sock, 16)
+        if header is None:
+            print("[Camera] Connection closed")
+            break
+
+        payload_size = struct.unpack_from('<I', header, 0)[0]
+        if payload_size == 0 or payload_size > 5_000_000:
+            continue
+
+        jpeg_data = read_exact(sock, payload_size)
+        if jpeg_data is None:
+            print("[Camera] Connection lost during frame read")
+            break
+
+        if not (jpeg_data[:4] == JPEG_START and jpeg_data[-2:] == JPEG_END):
+            continue
+
+        np_arr = np.frombuffer(jpeg_data, dtype=np.uint8)
+        frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        if frame is None:
             continue
 
         sp_trig,  sp_score  = spaghetti.detect(frame)
@@ -346,7 +406,11 @@ def vision_thread():
             print_paused.clear()
             print("[INFO] Triggers reset, print resumed monitoring")
 
-    cap.release()
+    if sock:
+        try:
+            sock.close()
+        except Exception:
+            pass
     cv2.destroyAllWindows()
     mqtt_client.loop_stop()
     mqtt_client.disconnect()
