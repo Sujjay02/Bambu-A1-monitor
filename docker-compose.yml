@@ -1,0 +1,12 @@
+services:
+  monitor:
+    build: .
+    network_mode: host
+    environment:
+      - PRINTER_IP=10.8.103.8
+      - ACCESS_CODE=962473bf
+      - SERIAL_NUMBER=03919D532701879
+    volumes:
+      - ./print_telemetry.csv:/app/print_telemetry.csv
+      - ./failure_snapshots:/app/failure_snapshots
+    restart: unless-stopped

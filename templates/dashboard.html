@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bambu A1 Monitor</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f1117;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+
+        /* ── Header ─────────────────────────────── */
+        header {
+            background: #161822;
+            border-bottom: 1px solid #2a2d3a;
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-left h1 {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .header-left .subtitle {
+            font-size: 0.8rem;
+            color: #888;
+            margin-top: 2px;
+        }
+
+        .conn-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #555;
+            transition: background 0.3s;
+        }
+
+        .status-dot.connected { background: #00c853; box-shadow: 0 0 6px #00c85366; }
+        .status-dot.disconnected { background: #ff1744; box-shadow: 0 0 6px #ff174466; }
+
+        /* ── Grid Layout ────────────────────────── */
+        .dashboard {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-rows: auto auto auto;
+            gap: 16px;
+            padding: 20px 24px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: #161822;
+            border: 1px solid #2a2d3a;
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .card-title {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #888;
+            margin-bottom: 14px;
+        }
+
+        /* ── Print Status Card ──────────────────── */
+        .card-status { grid-column: 1 / 3; }
+
+        .status-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr 1fr;
+            gap: 16px;
+        }
+
+        .stat-block label {
+            display: block;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            color: #666;
+            margin-bottom: 4px;
+        }
+
+        .stat-block .value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .stat-block .value.state {
+            font-size: 1.1rem;
+            color: #64b5f6;
+        }
+
+        .progress-bar-container {
+            margin-top: 16px;
+            background: #1e2030;
+            border-radius: 6px;
+            height: 8px;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #00c853, #69f0ae);
+            border-radius: 6px;
+            transition: width 0.5s ease;
+            width: 0%;
+        }
+
+        .progress-label {
+            margin-top: 6px;
+            font-size: 0.75rem;
+            color: #888;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        /* ── Temperature Card ───────────────────── */
+        .card-temps { grid-column: 3; grid-row: 1 / 3; }
+
+        .temp-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #1e2030;
+        }
+
+        .temp-row:last-of-type { border-bottom: none; }
+
+        .temp-label { font-size: 0.85rem; color: #aaa; }
+
+        .temp-value {
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+
+        .temp-value .target {
+            font-size: 0.8rem;
+            color: #666;
+            font-weight: 400;
+        }
+
+        .nozzle-color { color: #ff7043; }
+        .bed-color { color: #42a5f5; }
+
+        .chart-container {
+            margin-top: 16px;
+            height: 200px;
+        }
+
+        /* ── Detectors Card ─────────────────────── */
+        .card-detectors { grid-column: 1; }
+
+        .detector-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #1e2030;
+        }
+
+        .detector-row:last-child { border-bottom: none; }
+
+        .detector-name {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .detector-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #00c853;
+            transition: background 0.3s;
+        }
+
+        .detector-dot.alert {
+            background: #ff1744;
+            box-shadow: 0 0 8px #ff174466;
+        }
+
+        .detector-score {
+            font-size: 0.8rem;
+            color: #666;
+            font-family: monospace;
+        }
+
+        .detector-count {
+            font-size: 0.75rem;
+            color: #888;
+        }
+
+        /* ── Camera Card ────────────────────────── */
+        .card-camera { grid-column: 2 / 4; }
+
+        .camera-frame {
+            width: 100%;
+            border-radius: 8px;
+            background: #0a0b0f;
+            min-height: 240px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .camera-frame img {
+            width: 100%;
+            border-radius: 8px;
+        }
+
+        .camera-placeholder {
+            color: #444;
+            font-size: 0.9rem;
+            text-align: center;
+            padding: 40px;
+        }
+
+        /* ── Controls Card ──────────────────────── */
+        .card-controls {
+            grid-column: 1 / 4;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .btn {
+            padding: 10px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-pause {
+            background: #ff1744;
+            color: #fff;
+        }
+
+        .btn-pause:hover { background: #d50000; }
+
+        .btn-resume {
+            background: #1e2030;
+            color: #69f0ae;
+            border: 1px solid #2a2d3a;
+        }
+
+        .btn-resume:hover { background: #2a2d3a; }
+
+        .pause-banner {
+            display: none;
+            background: #ff1744;
+            color: #fff;
+            padding: 6px 16px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            margin-left: auto;
+        }
+
+        .pause-banner.visible { display: block; }
+
+        /* ── Responsive ─────────────────────────── */
+        @media (max-width: 900px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+            .card-status,
+            .card-temps,
+            .card-camera,
+            .card-controls,
+            .card-detectors {
+                grid-column: 1;
+                grid-row: auto;
+            }
+            .status-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header>
+        <div class="header-left">
+            <h1>Bambu A1 Monitor</h1>
+            <div class="subtitle">{{ printer_ip }} &middot; {{ serial_number }}</div>
+        </div>
+        <div class="conn-status">
+            <div class="status-dot" id="mqttDot"></div>
+            <span id="mqttLabel">Connecting...</span>
+            &nbsp;&nbsp;
+            <div class="status-dot" id="cameraDot"></div>
+            <span id="cameraLabel">Camera</span>
+        </div>
+    </header>
+
+    <!-- Dashboard Grid -->
+    <div class="dashboard">
+
+        <!-- Print Status -->
+        <div class="card card-status">
+            <div class="card-title">Print Status</div>
+            <div class="status-grid">
+                <div class="stat-block">
+                    <label>State</label>
+                    <div class="value state" id="printState">--</div>
+                </div>
+                <div class="stat-block">
+                    <label>Layer</label>
+                    <div class="value" id="layerInfo">--</div>
+                </div>
+                <div class="stat-block">
+                    <label>Speed</label>
+                    <div class="value" id="printSpeed">--</div>
+                </div>
+                <div class="stat-block">
+                    <label>ETA</label>
+                    <div class="value" id="etaInfo">--</div>
+                </div>
+            </div>
+            <div class="progress-bar-container">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
+            <div class="progress-label">
+                <span id="progressText">0%</span>
+                <span>Fan: <span id="fanSpeed">--</span></span>
+            </div>
+        </div>
+
+        <!-- Temperatures -->
+        <div class="card card-temps">
+            <div class="card-title">Temperatures</div>
+            <div class="temp-row">
+                <span class="temp-label">Nozzle</span>
+                <span class="temp-value nozzle-color">
+                    <span id="nozzleTemp">--</span>&deg;C
+                    <span class="target">/ <span id="nozzleTarget">--</span>&deg;C</span>
+                </span>
+            </div>
+            <div class="temp-row">
+                <span class="temp-label">Bed</span>
+                <span class="temp-value bed-color">
+                    <span id="bedTemp">--</span>&deg;C
+                    <span class="target">/ <span id="bedTarget">--</span>&deg;C</span>
+                </span>
+            </div>
+            <div class="chart-container">
+                <canvas id="tempChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Detectors -->
+        <div class="card card-detectors">
+            <div class="card-title">Failure Detection</div>
+            <div class="detector-row" id="det-Spaghetti">
+                <div class="detector-name">
+                    <div class="detector-dot"></div>
+                    <span>Spaghetti</span>
+                </div>
+                <span class="detector-score">0.000</span>
+                <span class="detector-count">0/5</span>
+            </div>
+            <div class="detector-row" id="det-LayerShift">
+                <div class="detector-name">
+                    <div class="detector-dot"></div>
+                    <span>Layer Shift</span>
+                </div>
+                <span class="detector-score">0.000</span>
+                <span class="detector-count">0/5</span>
+            </div>
+            <div class="detector-row" id="det-Warp">
+                <div class="detector-name">
+                    <div class="detector-dot"></div>
+                    <span>Warp</span>
+                </div>
+                <span class="detector-score">0.000</span>
+                <span class="detector-count">0/5</span>
+            </div>
+        </div>
+
+        <!-- Camera -->
+        <div class="card card-camera">
+            <div class="card-title">Camera Feed</div>
+            <div class="camera-frame" id="cameraFrame">
+                <div class="camera-placeholder" id="cameraPlaceholder">
+                    Camera not available<br>
+                    <small>Waiting for RTSP stream on port 322...</small>
+                </div>
+                <img id="cameraImg" style="display:none;" alt="Camera Feed">
+            </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="card card-controls">
+            <button class="btn btn-pause" onclick="pausePrint()">Pause Print</button>
+            <button class="btn btn-resume" onclick="resumeMonitoring()">Reset Triggers</button>
+            <div class="pause-banner" id="pauseBanner">PRINT PAUSED — FAILURE DETECTED</div>
+        </div>
+    </div>
+
+    <script>
+        // ── Temperature Chart ─────────────────────────
+        const ctx = document.getElementById('tempChart').getContext('2d');
+        const tempChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'Nozzle',
+                        data: [],
+                        borderColor: '#ff7043',
+                        backgroundColor: '#ff704322',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0.3,
+                        fill: true,
+                    },
+                    {
+                        label: 'Nozzle Target',
+                        data: [],
+                        borderColor: '#ff704366',
+                        borderWidth: 1,
+                        borderDash: [4, 4],
+                        pointRadius: 0,
+                        tension: 0.3,
+                    },
+                    {
+                        label: 'Bed',
+                        data: [],
+                        borderColor: '#42a5f5',
+                        backgroundColor: '#42a5f522',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0.3,
+                        fill: true,
+                    },
+                    {
+                        label: 'Bed Target',
+                        data: [],
+                        borderColor: '#42a5f566',
+                        borderWidth: 1,
+                        borderDash: [4, 4],
+                        pointRadius: 0,
+                        tension: 0.3,
+                    },
+                ],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: { duration: 0 },
+                scales: {
+                    x: {
+                        display: true,
+                        ticks: { color: '#555', maxTicksLimit: 6, font: { size: 10 } },
+                        grid: { color: '#1e2030' },
+                    },
+                    y: {
+                        display: true,
+                        ticks: { color: '#555', font: { size: 10 } },
+                        grid: { color: '#1e2030' },
+                        suggestedMin: 0,
+                        suggestedMax: 260,
+                    },
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'bottom',
+                        labels: { color: '#888', boxWidth: 12, font: { size: 10 } },
+                    },
+                },
+            },
+        });
+
+        // Load initial history
+        fetch('/api/history')
+            .then(r => r.json())
+            .then(h => {
+                tempChart.data.labels = h.timestamps;
+                tempChart.data.datasets[0].data = h.nozzle_temp;
+                tempChart.data.datasets[1].data = h.nozzle_target;
+                tempChart.data.datasets[2].data = h.bed_temp;
+                tempChart.data.datasets[3].data = h.bed_target;
+                tempChart.update();
+            });
+
+        // ── SSE Live Updates ──────────────────────────
+        const evtSource = new EventSource('/events');
+
+        evtSource.onmessage = function(event) {
+            const d = JSON.parse(event.data);
+
+            // Connection indicators
+            setDot('mqttDot', d.mqtt_connected);
+            document.getElementById('mqttLabel').textContent = d.mqtt_connected ? 'MQTT Connected' : 'MQTT Disconnected';
+            setDot('cameraDot', d.camera_available);
+            document.getElementById('cameraLabel').textContent = d.camera_available ? 'Camera OK' : 'Camera Off';
+
+            // Print status
+            document.getElementById('printState').textContent = d.print_state || '--';
+            document.getElementById('layerInfo').textContent = d.layer_current + ' / ' + d.layer_total;
+            document.getElementById('printSpeed').textContent = d.print_speed || '--';
+            const eta = d.time_remaining_min;
+            document.getElementById('etaInfo').textContent = eta > 0 ? eta + 'm' : '--';
+            document.getElementById('fanSpeed').textContent = d.fan_speed;
+
+            // Progress
+            const pct = d.percent_complete || 0;
+            document.getElementById('progressBar').style.width = pct + '%';
+            document.getElementById('progressText').textContent = pct + '%';
+
+            // Temperatures
+            document.getElementById('nozzleTemp').textContent = d.nozzle_temp;
+            document.getElementById('nozzleTarget').textContent = d.nozzle_target;
+            document.getElementById('bedTemp').textContent = d.bed_temp;
+            document.getElementById('bedTarget').textContent = d.bed_target;
+
+            // Append to chart
+            const now = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            tempChart.data.labels.push(now);
+            tempChart.data.datasets[0].data.push(d.nozzle_temp);
+            tempChart.data.datasets[1].data.push(d.nozzle_target);
+            tempChart.data.datasets[2].data.push(d.bed_temp);
+            tempChart.data.datasets[3].data.push(d.bed_target);
+            // Keep last 150 points on chart
+            if (tempChart.data.labels.length > 150) {
+                tempChart.data.labels.shift();
+                tempChart.data.datasets.forEach(ds => ds.data.shift());
+            }
+            tempChart.update();
+
+            // Detectors
+            if (d.detectors) {
+                for (const [name, info] of Object.entries(d.detectors)) {
+                    const row = document.getElementById('det-' + name);
+                    if (!row) continue;
+                    const dot = row.querySelector('.detector-dot');
+                    dot.classList.toggle('alert', info.triggered);
+                    row.querySelector('.detector-score').textContent = info.score.toFixed(3);
+                    row.querySelector('.detector-count').textContent = info.count + '/5';
+                }
+            }
+
+            // Pause banner
+            document.getElementById('pauseBanner').classList.toggle('visible', d.print_paused);
+        };
+
+        evtSource.onerror = function() {
+            setDot('mqttDot', false);
+            document.getElementById('mqttLabel').textContent = 'Connection Lost';
+        };
+
+        function setDot(id, ok) {
+            const el = document.getElementById(id);
+            el.classList.toggle('connected', ok);
+            el.classList.toggle('disconnected', !ok);
+        }
+
+        // ── Camera Refresh ────────────────────────────
+        let cameraActive = false;
+
+        function refreshCamera() {
+            const img = document.getElementById('cameraImg');
+            const placeholder = document.getElementById('cameraPlaceholder');
+
+            img.onload = function() {
+                if (!cameraActive) {
+                    cameraActive = true;
+                    placeholder.style.display = 'none';
+                    img.style.display = 'block';
+                }
+            };
+            img.onerror = function() {
+                if (cameraActive) {
+                    cameraActive = false;
+                    placeholder.style.display = 'block';
+                    img.style.display = 'none';
+                }
+            };
+            img.src = '/api/camera/frame?' + Date.now();
+        }
+
+        setInterval(refreshCamera, 2000);
+        refreshCamera();
+
+        // ── Controls ──────────────────────────────────
+        function pausePrint() {
+            fetch('/api/pause', { method: 'POST' })
+                .then(r => r.json())
+                .then(() => console.log('Pause sent'));
+        }
+
+        function resumeMonitoring() {
+            fetch('/api/resume', { method: 'POST' })
+                .then(r => r.json())
+                .then(() => console.log('Resume sent'));
+        }
+    </script>
+</body>
+</html>
