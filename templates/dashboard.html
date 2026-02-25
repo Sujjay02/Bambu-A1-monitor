@@ -55,6 +55,14 @@
         .status-dot.connected { background: #00c853; box-shadow: 0 0 6px #00c85366; }
         .status-dot.disconnected { background: #ff1744; box-shadow: 0 0 6px #ff174466; }
 
+        .settings-link {
+            color: #666;
+            text-decoration: none;
+            font-size: 1.3rem;
+            transition: color 0.2s;
+        }
+        .settings-link:hover { color: #aaa; }
+
         /* ── Grid Layout ────────────────────────── */
         .dashboard {
             display: grid;
@@ -314,6 +322,8 @@
             &nbsp;&nbsp;
             <div class="status-dot" id="cameraDot"></div>
             <span id="cameraLabel">Camera</span>
+            &nbsp;&nbsp;
+            <a href="/setup" class="settings-link" title="Settings">&#9881;</a>
         </div>
     </header>
 

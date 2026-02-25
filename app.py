@@ -2,15 +2,13 @@
 Bambu A1 Web Monitor
 --------------------
 Flask web dashboard for real-time 3D printer monitoring via MQTT.
-Optional camera-based failure detection when RTSP stream is available.
+Camera-based failure detection via the Bambu proprietary JPEG-over-TLS stream.
 
 Usage:
     python app.py
 
-Environment variables:
-    PRINTER_IP      (default: 10.8.103.8)
-    ACCESS_CODE     (default: 962473bf)
-    SERIAL_NUMBER   (default: 03919D532701879)
+Configuration is entered via the web setup page on first run,
+or loaded from config.json / environment variables.
 """
 
 import cv2
@@ -25,27 +23,70 @@ import struct
 import threading
 from datetime import datetime
 from collections import deque
-from flask import Flask, render_template, Response, jsonify, request
+from flask import Flask, render_template, Response, jsonify, request, redirect
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
-PRINTER_IP    = os.environ.get("PRINTER_IP", "")
-ACCESS_CODE   = os.environ.get("ACCESS_CODE", "")
-SERIAL_NUMBER = os.environ.get("SERIAL_NUMBER", "")
-
-MQTT_PORT      = 8883
-MQTT_TOPIC_SUB = f"device/{SERIAL_NUMBER}/report"
-MQTT_TOPIC_PUB = f"device/{SERIAL_NUMBER}/request"
-CAMERA_PORT    = 6000
-
-LOG_FILE       = "print_telemetry.csv"
-FAILURE_DIR    = "failure_snapshots"
+CONFIG_FILE = "config.json"
+MQTT_PORT   = 8883
+CAMERA_PORT = 6000
+LOG_FILE    = "print_telemetry.csv"
+FAILURE_DIR = "failure_snapshots"
 
 SPAGHETTI_SENSITIVITY   = 0.6
 LAYER_SHIFT_SENSITIVITY = 0.5
 WARP_SENSITIVITY        = 0.5
 TRIGGER_FRAMES          = 5
+
+# Mutable printer config (set via web UI or config.json)
+config = {"printer_ip": "", "access_code": "", "serial_number": ""}
+config_lock = threading.Lock()
+config_ready = threading.Event()
+
+def get_config():
+    with config_lock:
+        return config.copy()
+
+def load_config():
+    """Load config from config.json, falling back to env vars."""
+    global config
+    loaded = {}
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE) as f:
+                loaded = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    ip = loaded.get("printer_ip") or os.environ.get("PRINTER_IP", "")
+    code = loaded.get("access_code") or os.environ.get("ACCESS_CODE", "")
+    sn = loaded.get("serial_number") or os.environ.get("SERIAL_NUMBER", "")
+
+    if ip and code and sn:
+        with config_lock:
+            config["printer_ip"] = ip
+            config["access_code"] = code
+            config["serial_number"] = sn
+        config_ready.set()
+        print(f"[Config] Loaded — Printer: {ip}  SN: {sn}")
+        return True
+    return False
+
+def save_config(printer_ip, access_code, serial_number):
+    """Save config to config.json and update in-memory state."""
+    global config
+    data = {
+        "printer_ip": printer_ip,
+        "access_code": access_code,
+        "serial_number": serial_number,
+    }
+    with open(CONFIG_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+    with config_lock:
+        config.update(data)
+    config_ready.set()
+    print(f"[Config] Saved — Printer: {printer_ip}  SN: {serial_number}")
 
 # ── SHARED STATE ──────────────────────────────────────────────────────────────
 telemetry = {
@@ -66,7 +107,6 @@ print_paused = threading.Event()
 mqtt_connected = threading.Event()
 camera_available = threading.Event()
 
-# Temperature history (last 300 readings ~5 min)
 temp_history = {
     "timestamps": deque(maxlen=300),
     "nozzle_temp": deque(maxlen=300),
@@ -76,7 +116,6 @@ temp_history = {
 }
 temp_history_lock = threading.Lock()
 
-# Vision state
 vision_status = {
     "Spaghetti": {"triggered": False, "score": 0.0, "count": 0},
     "LayerShift": {"triggered": False, "score": 0.0, "count": 0},
@@ -84,18 +123,17 @@ vision_status = {
 }
 vision_lock = threading.Lock()
 
-# Latest camera frame
 latest_frame = None
 frame_lock = threading.Lock()
 
-# Global MQTT client for sending commands
 mqtt_cmd_client = None
 mqtt_cmd_lock = threading.Lock()
 
 # ── MQTT CLIENT ───────────────────────────────────────────────────────────────
 def make_mqtt_client():
+    cfg = get_config()
     client = mqtt.Client(CallbackAPIVersion.VERSION2)
-    client.username_pw_set("bblp", ACCESS_CODE)
+    client.username_pw_set("bblp", cfg["access_code"])
     tls_ctx = ssl.create_default_context()
     tls_ctx.check_hostname = False
     tls_ctx.verify_mode = ssl.CERT_NONE
@@ -107,10 +145,12 @@ def pause_print(reason: str):
     if print_paused.is_set():
         return
     print(f"[ALERT] FAILURE DETECTED: {reason}")
+    cfg = get_config()
+    topic = f"device/{cfg['serial_number']}/request"
     with mqtt_cmd_lock:
         if mqtt_cmd_client:
             payload = {"print": {"command": "pause", "sequence_id": "1"}}
-            mqtt_cmd_client.publish(MQTT_TOPIC_PUB, json.dumps(payload))
+            mqtt_cmd_client.publish(topic, json.dumps(payload))
     print_paused.set()
 
 def resume_monitoring():
@@ -174,11 +214,16 @@ def parse_telemetry(payload: dict) -> dict:
 # ── TELEMETRY THREAD ──────────────────────────────────────────────────────────
 def telemetry_thread():
     global mqtt_cmd_client
+
+    config_ready.wait()
+    cfg = get_config()
+
     client = make_mqtt_client()
+    topic_sub = f"device/{cfg['serial_number']}/report"
 
     def on_connect(c, userdata, flags, rc, properties=None):
         if rc == 0 or rc.value == 0:
-            c.subscribe(MQTT_TOPIC_SUB)
+            c.subscribe(topic_sub)
             mqtt_connected.set()
             with mqtt_cmd_lock:
                 global mqtt_cmd_client
@@ -199,7 +244,6 @@ def telemetry_thread():
                 with telemetry_lock:
                     telemetry.update(data)
                 log_to_csv(data)
-                # Update temperature history
                 with temp_history_lock:
                     temp_history["timestamps"].append(datetime.now().strftime("%H:%M:%S"))
                     with telemetry_lock:
@@ -215,7 +259,7 @@ def telemetry_thread():
     client.on_message = on_message
     while True:
         try:
-            client.connect(PRINTER_IP, MQTT_PORT, keepalive=60)
+            client.connect(cfg["printer_ip"], MQTT_PORT, keepalive=60)
             client.loop_forever()
         except (TimeoutError, OSError) as e:
             mqtt_connected.clear()
@@ -295,7 +339,6 @@ JPEG_START = bytes([0xFF, 0xD8, 0xFF, 0xE0])
 JPEG_END   = bytes([0xFF, 0xD9])
 
 def create_camera_auth(access_code: str) -> bytes:
-    """Build the 80-byte auth payload for Bambu A1 camera (port 6000)."""
     auth = bytearray(80)
     struct.pack_into('<I', auth, 0, 0x40)
     struct.pack_into('<I', auth, 4, 0x3000)
@@ -304,19 +347,7 @@ def create_camera_auth(access_code: str) -> bytes:
     auth[48:48 + len(code)] = code
     return bytes(auth)
 
-# ── VISION THREAD ─────────────────────────────────────────────────────────────
-def check_camera_port():
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(3)
-        s.connect((PRINTER_IP, CAMERA_PORT))
-        s.close()
-        return True
-    except (socket.timeout, OSError):
-        return False
-
 def read_exact(sock, n):
-    """Read exactly n bytes from a TLS socket."""
     buf = bytearray()
     while len(buf) < n:
         try:
@@ -328,26 +359,36 @@ def read_exact(sock, n):
             time.sleep(0.05)
     return bytes(buf)
 
+# ── VISION THREAD ─────────────────────────────────────────────────────────────
 def vision_thread():
     global latest_frame
+
+    config_ready.wait()
+    cfg = get_config()
 
     tls_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     tls_ctx.check_hostname = False
     tls_ctx.verify_mode = ssl.CERT_NONE
-    auth_data = create_camera_auth(ACCESS_CODE)
+    auth_data = create_camera_auth(cfg["access_code"])
 
     while True:
-        if not check_camera_port():
+        # Check camera port
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(3)
+            s.connect((cfg["printer_ip"], CAMERA_PORT))
+            s.close()
+        except (socket.timeout, OSError):
             print(f"[Camera] Port {CAMERA_PORT} not available — retrying in 30s...")
             time.sleep(30)
             continue
 
         sock = None
         try:
-            print(f"[Camera] Connecting to {PRINTER_IP}:{CAMERA_PORT}...")
+            print(f"[Camera] Connecting to {cfg['printer_ip']}:{CAMERA_PORT}...")
             raw = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             raw.settimeout(10)
-            raw.connect((PRINTER_IP, CAMERA_PORT))
+            raw.connect((cfg["printer_ip"], CAMERA_PORT))
             sock = tls_ctx.wrap_socket(raw)
             sock.sendall(auth_data)
 
@@ -361,7 +402,6 @@ def vision_thread():
             trigger_counts = {"Spaghetti": 0, "LayerShift": 0, "Warp": 0}
 
             while True:
-                # Read 16-byte frame header
                 header = read_exact(sock, 16)
                 if header is None:
                     print("[Camera] Connection closed")
@@ -371,27 +411,22 @@ def vision_thread():
                 if payload_size == 0 or payload_size > 5_000_000:
                     continue
 
-                # Read JPEG payload
                 jpeg_data = read_exact(sock, payload_size)
                 if jpeg_data is None:
                     print("[Camera] Connection lost during frame read")
                     break
 
-                # Validate JPEG
                 if not (jpeg_data[:4] == JPEG_START and jpeg_data[-2:] == JPEG_END):
                     continue
 
-                # Decode to OpenCV frame
                 np_arr = np.frombuffer(jpeg_data, dtype=np.uint8)
                 frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
                 if frame is None:
                     continue
 
-                # Store latest frame for web endpoint
                 with frame_lock:
                     latest_frame = frame.copy()
 
-                # Run detectors
                 sp_trig, sp_score = spaghetti.detect(frame)
                 ls_trig, ls_score = layer_shift.detect(frame)
                 wp_trig, wp_score = warp.detect(frame)
@@ -438,9 +473,53 @@ app = Flask(__name__)
 
 @app.route("/")
 def index():
+    if not config_ready.is_set():
+        return render_template("setup.html")
+    cfg = get_config()
     return render_template("dashboard.html",
-                           printer_ip=PRINTER_IP,
-                           serial_number=SERIAL_NUMBER)
+                           printer_ip=cfg["printer_ip"],
+                           serial_number=cfg["serial_number"])
+
+@app.route("/setup")
+def setup_page():
+    cfg = get_config()
+    return render_template("setup.html",
+                           printer_ip=cfg["printer_ip"],
+                           access_code=cfg["access_code"],
+                           serial_number=cfg["serial_number"])
+
+@app.route("/api/config", methods=["GET"])
+def api_config_get():
+    cfg = get_config()
+    # Mask access code for display
+    code = cfg["access_code"]
+    masked = code[:2] + "*" * (len(code) - 2) if len(code) > 2 else "*" * len(code)
+    return jsonify({
+        "printer_ip": cfg["printer_ip"],
+        "access_code_masked": masked,
+        "serial_number": cfg["serial_number"],
+        "configured": config_ready.is_set(),
+    })
+
+@app.route("/api/config", methods=["POST"])
+def api_config_post():
+    data = request.get_json(silent=True) or {}
+    ip = data.get("printer_ip", "").strip()
+    code = data.get("access_code", "").strip()
+    sn = data.get("serial_number", "").strip()
+
+    errors = []
+    if not ip:
+        errors.append("Printer IP is required")
+    if not code:
+        errors.append("Access Code is required")
+    if not sn:
+        errors.append("Serial Number is required")
+    if errors:
+        return jsonify({"errors": errors}), 400
+
+    save_config(ip, code, sn)
+    return jsonify({"status": "saved"})
 
 @app.route("/api/telemetry")
 def api_telemetry():
@@ -500,32 +579,23 @@ def events():
 
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 def main():
-    missing = [v for v in ("PRINTER_IP", "ACCESS_CODE", "SERIAL_NUMBER")
-               if not os.environ.get(v)]
-    if missing:
-        print("ERROR: Missing required environment variables:")
-        for v in missing:
-            print(f"  - {v}")
-        print("\nCopy .env.example to .env and fill in your printer details.")
-        raise SystemExit(1)
-
     print("=" * 55)
     print("  BAMBU A1 WEB MONITOR")
-    print(f"  Printer: {PRINTER_IP}  |  SN: {SERIAL_NUMBER}")
     print("=" * 55)
 
     init_csv()
+    loaded = load_config()
 
-    # Start background threads
+    if not loaded:
+        print("[Config] No config found — open http://0.0.0.0:5000 to set up")
+
+    # Start background threads (they wait for config_ready)
     t_telemetry = threading.Thread(target=telemetry_thread, daemon=True)
     t_telemetry.start()
-    print("[Telemetry] Thread started")
 
     t_vision = threading.Thread(target=vision_thread, daemon=True)
     t_vision.start()
-    print("[Vision] Thread started")
 
-    # Start Flask
     print("[Web] Dashboard at http://0.0.0.0:5000")
     app.run(host="0.0.0.0", port=5000, threaded=True)
 
