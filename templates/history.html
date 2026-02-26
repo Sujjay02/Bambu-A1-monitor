@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bambu A1 Monitor — Print History</title>
+    <style>
+        :root {
+            --bg-primary: #0f1117;
+            --bg-card: #161822;
+            --bg-input: #1e2030;
+            --border: #2a2d3a;
+            --text-primary: #e0e0e0;
+            --text-secondary: #888;
+            --text-muted: #666;
+            --text-white: #fff;
+        }
+
+        body.light {
+            --bg-primary: #f0f2f5;
+            --bg-card: #ffffff;
+            --bg-input: #e8eaed;
+            --border: #d0d3da;
+            --text-primary: #1a1a2e;
+            --text-secondary: #555;
+            --text-muted: #777;
+            --text-white: #111;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        header {
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-left h1 {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: var(--text-white);
+        }
+
+        .header-left .subtitle {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .nav-link {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.85rem;
+            transition: color 0.2s;
+        }
+        .nav-link:hover { color: var(--text-primary); }
+
+        .theme-toggle {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 1.3rem;
+            cursor: pointer;
+            transition: color 0.2s;
+            padding: 4px;
+        }
+        .theme-toggle:hover { color: var(--text-primary); }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        /* Stats Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .stat-card .stat-label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+
+        .stat-card .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--text-white);
+        }
+
+        .stat-card .stat-value.success { color: #00c853; }
+        .stat-card .stat-value.time { color: #42a5f5; }
+
+        /* Job Table */
+        .history-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .history-card .card-title {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
+            padding: 20px 20px 14px;
+        }
+
+        .job-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .job-table th {
+            text-align: left;
+            padding: 10px 20px;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-input);
+        }
+
+        .job-table td {
+            padding: 14px 20px;
+            font-size: 0.9rem;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-primary);
+        }
+
+        .job-table tr:last-child td { border-bottom: none; }
+
+        .status-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-badge.completed { background: #00c85322; color: #00c853; }
+        .status-badge.failed { background: #ff174422; color: #ff1744; }
+        .status-badge.cancelled { background: #ff910022; color: #ff9100; }
+        .status-badge.printing { background: #42a5f522; color: #42a5f5; }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+        }
+
+        .empty-state .icon {
+            font-size: 3rem;
+            margin-bottom: 12px;
+            opacity: 0.3;
+        }
+
+        @media (max-width: 768px) {
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .job-table th, .job-table td { padding: 10px 12px; font-size: 0.8rem; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-left">
+            <h1>Print History</h1>
+            <div class="subtitle">{{ printer_ip }} &middot; {{ serial_number }}</div>
+        </div>
+        <div class="header-right">
+            <a href="/" class="nav-link">Dashboard</a>
+            <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle theme">&#9790;</button>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Stats Summary -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Total Prints</div>
+                <div class="stat-value" id="totalPrints">--</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Success Rate</div>
+                <div class="stat-value success" id="successRate">--</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Total Print Time</div>
+                <div class="stat-value time" id="totalTime">--</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Avg Duration</div>
+                <div class="stat-value time" id="avgDuration">--</div>
+            </div>
+        </div>
+
+        <!-- Job History Table -->
+        <div class="history-card">
+            <div class="card-title">Print Jobs</div>
+            <table class="job-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Duration</th>
+                        <th>Layers</th>
+                        <th>Status</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+                <tbody id="jobTableBody">
+                    <tr>
+                        <td colspan="5" class="empty-state">
+                            <div class="icon">&#9881;</div>
+                            Loading...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // Theme
+        function applyTheme() {
+            const theme = localStorage.getItem('bambu-theme') || 'dark';
+            document.body.classList.toggle('light', theme === 'light');
+            document.getElementById('themeToggle').textContent = theme === 'light' ? '\u2600' : '\u263E';
+        }
+        function toggleTheme() {
+            const current = localStorage.getItem('bambu-theme') || 'dark';
+            localStorage.setItem('bambu-theme', current === 'dark' ? 'light' : 'dark');
+            applyTheme();
+        }
+        applyTheme();
+
+        function formatDuration(min) {
+            if (!min || min <= 0) return '--';
+            if (min < 60) return Math.round(min) + 'm';
+            const h = Math.floor(min / 60);
+            const m = Math.round(min % 60);
+            return h + 'h ' + m + 'm';
+        }
+
+        function formatDate(iso) {
+            if (!iso) return '--';
+            const d = new Date(iso);
+            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
+                   ' ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        // Load stats
+        fetch('/api/history/stats')
+            .then(r => r.json())
+            .then(s => {
+                document.getElementById('totalPrints').textContent = s.total_prints;
+                document.getElementById('successRate').textContent = s.success_rate + '%';
+                document.getElementById('totalTime').textContent = formatDuration(s.total_print_time_min);
+                document.getElementById('avgDuration').textContent = formatDuration(s.avg_duration_min);
+            });
+
+        // Load jobs
+        fetch('/api/history/jobs')
+            .then(r => r.json())
+            .then(jobs => {
+                const tbody = document.getElementById('jobTableBody');
+                if (jobs.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="empty-state"><div class="icon">&#128424;</div>No print jobs recorded yet.<br><small>Jobs will appear here as you print.</small></td></tr>';
+                    return;
+                }
+                tbody.innerHTML = jobs.map(j => `
+                    <tr>
+                        <td>${formatDate(j.start_time)}</td>
+                        <td>${formatDuration(j.duration_min)}</td>
+                        <td>${j.total_layers || '--'}</td>
+                        <td><span class="status-badge ${j.status}">${j.status}</span></td>
+                        <td>${j.failure_reason || '--'}</td>
+                    </tr>
+                `).join('');
+            });
+    </script>
+</body>
+</html>
