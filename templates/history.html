@@ -283,32 +283,75 @@
 
         // Load stats
         fetch('/api/history/stats')
-            .then(r => r.json())
-            .then(s => {
+            .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+            .then(function(s) {
                 document.getElementById('totalPrints').textContent = s.total_prints;
                 document.getElementById('successRate').textContent = s.success_rate + '%';
                 document.getElementById('totalTime').textContent = formatDuration(s.total_print_time_min);
                 document.getElementById('avgDuration').textContent = formatDuration(s.avg_duration_min);
+            })
+            .catch(function() {
+                document.getElementById('totalPrints').textContent = '0';
+                document.getElementById('successRate').textContent = '--';
+                document.getElementById('totalTime').textContent = '--';
+                document.getElementById('avgDuration').textContent = '--';
             });
 
-        // Load jobs
+        // Load jobs (XSS-safe DOM rendering)
         fetch('/api/history/jobs')
-            .then(r => r.json())
-            .then(jobs => {
-                const tbody = document.getElementById('jobTableBody');
+            .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+            .then(function(jobs) {
+                var tbody = document.getElementById('jobTableBody');
+                tbody.textContent = '';
                 if (jobs.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="5" class="empty-state"><div class="icon">&#128424;</div>No print jobs recorded yet.<br><small>Jobs will appear here as you print.</small></td></tr>';
+                    var tr = document.createElement('tr');
+                    var td = document.createElement('td');
+                    td.colSpan = 5;
+                    td.className = 'empty-state';
+                    td.innerHTML = '<div class="icon">&#128424;</div>No print jobs recorded yet.<br><small>Jobs will appear here as you print.</small>';
+                    tr.appendChild(td);
+                    tbody.appendChild(tr);
                     return;
                 }
-                tbody.innerHTML = jobs.map(j => `
-                    <tr>
-                        <td>${formatDate(j.start_time)}</td>
-                        <td>${formatDuration(j.duration_min)}</td>
-                        <td>${j.total_layers || '--'}</td>
-                        <td><span class="status-badge ${j.status}">${j.status}</span></td>
-                        <td>${j.failure_reason || '--'}</td>
-                    </tr>
-                `).join('');
+                jobs.forEach(function(j) {
+                    var tr = document.createElement('tr');
+
+                    var tdDate = document.createElement('td');
+                    tdDate.textContent = formatDate(j.start_time);
+                    tr.appendChild(tdDate);
+
+                    var tdDuration = document.createElement('td');
+                    tdDuration.textContent = formatDuration(j.duration_min);
+                    tr.appendChild(tdDuration);
+
+                    var tdLayers = document.createElement('td');
+                    tdLayers.textContent = j.total_layers || '--';
+                    tr.appendChild(tdLayers);
+
+                    var tdStatus = document.createElement('td');
+                    var badge = document.createElement('span');
+                    badge.className = 'status-badge ' + (j.status || '');
+                    badge.textContent = j.status || '--';
+                    tdStatus.appendChild(badge);
+                    tr.appendChild(tdStatus);
+
+                    var tdDetails = document.createElement('td');
+                    tdDetails.textContent = j.failure_reason || '--';
+                    tr.appendChild(tdDetails);
+
+                    tbody.appendChild(tr);
+                });
+            })
+            .catch(function() {
+                var tbody = document.getElementById('jobTableBody');
+                tbody.textContent = '';
+                var tr = document.createElement('tr');
+                var td = document.createElement('td');
+                td.colSpan = 5;
+                td.className = 'empty-state';
+                td.textContent = 'Failed to load print history.';
+                tr.appendChild(td);
+                tbody.appendChild(tr);
             });
     </script>
 </body>

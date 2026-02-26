@@ -18,14 +18,23 @@ import json
 import time
 import csv
 import os
+import re
 import socket
 import struct
+import logging
 import threading
 from datetime import datetime
 from collections import deque
 from flask import Flask, render_template, Response, jsonify, request, redirect
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+log = logging.getLogger("bambu-monitor")
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 CONFIG_FILE = "config.json"
@@ -69,7 +78,7 @@ def load_config():
             config["access_code"] = code
             config["serial_number"] = sn
         config_ready.set()
-        print(f"[Config] Loaded — Printer: {ip}  SN: {sn}")
+        log.info("Config loaded — Printer: %s  SN: %s", ip, sn)
         return True
     return False
 
@@ -86,7 +95,7 @@ def save_config(printer_ip, access_code, serial_number):
     with config_lock:
         config.update(data)
     config_ready.set()
-    print(f"[Config] Saved — Printer: {printer_ip}  SN: {serial_number}")
+    log.info("Config saved — Printer: %s  SN: %s", printer_ip, serial_number)
 
 # ── SHARED STATE ──────────────────────────────────────────────────────────────
 telemetry = {
@@ -129,6 +138,17 @@ frame_lock = threading.Lock()
 mqtt_cmd_client = None
 mqtt_cmd_lock = threading.Lock()
 
+csv_lock = threading.Lock()
+
+_sequence_id = 0
+_sequence_lock = threading.Lock()
+
+def next_sequence_id():
+    global _sequence_id
+    with _sequence_lock:
+        _sequence_id += 1
+        return str(_sequence_id)
+
 # ── MQTT CLIENT ───────────────────────────────────────────────────────────────
 def make_mqtt_client():
     cfg = get_config()
@@ -144,50 +164,59 @@ def pause_print(reason: str):
     global mqtt_cmd_client
     if print_paused.is_set():
         return
-    print(f"[ALERT] FAILURE DETECTED: {reason}")
+    log.warning("FAILURE DETECTED: %s", reason)
     cfg = get_config()
     topic = f"device/{cfg['serial_number']}/request"
     with mqtt_cmd_lock:
         if mqtt_cmd_client:
-            payload = {"print": {"command": "pause", "sequence_id": "1"}}
+            payload = {"print": {"command": "pause", "sequence_id": next_sequence_id()}}
             mqtt_cmd_client.publish(topic, json.dumps(payload))
     print_paused.set()
 
-def resume_monitoring():
+def resume_print():
+    """Send MQTT resume command and reset vision triggers."""
+    cfg = get_config()
+    topic = f"device/{cfg['serial_number']}/request"
+    with mqtt_cmd_lock:
+        if mqtt_cmd_client:
+            payload = {"print": {"command": "resume", "sequence_id": next_sequence_id()}}
+            mqtt_cmd_client.publish(topic, json.dumps(payload))
     print_paused.clear()
     with vision_lock:
         for name in vision_status:
             vision_status[name]["count"] = 0
-    print("[INFO] Triggers reset, monitoring resumed")
+    log.info("Print resumed, triggers reset")
 
 # ── CSV LOGGER ────────────────────────────────────────────────────────────────
 def init_csv():
-    if not os.path.exists(LOG_FILE):
-        with open(LOG_FILE, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow([
-                "timestamp", "print_state", "layer_current", "layer_total",
-                "nozzle_temp", "nozzle_target", "bed_temp", "bed_target",
-                "print_speed", "fan_speed", "percent_complete", "time_remaining_min"
-            ])
+    with csv_lock:
+        if not os.path.exists(LOG_FILE):
+            with open(LOG_FILE, "w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    "timestamp", "print_state", "layer_current", "layer_total",
+                    "nozzle_temp", "nozzle_target", "bed_temp", "bed_target",
+                    "print_speed", "fan_speed", "percent_complete", "time_remaining_min"
+                ])
 
 def log_to_csv(data: dict):
-    with open(LOG_FILE, "a", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow([
-            datetime.now().isoformat(),
-            data.get("print_state", ""),
-            data.get("layer_current", ""),
-            data.get("layer_total", ""),
-            data.get("nozzle_temp", ""),
-            data.get("nozzle_target", ""),
-            data.get("bed_temp", ""),
-            data.get("bed_target", ""),
-            data.get("print_speed", ""),
-            data.get("fan_speed", ""),
-            data.get("percent_complete", ""),
-            data.get("time_remaining_min", ""),
-        ])
+    with csv_lock:
+        with open(LOG_FILE, "a", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                datetime.now().isoformat(),
+                data.get("print_state", ""),
+                data.get("layer_current", ""),
+                data.get("layer_total", ""),
+                data.get("nozzle_temp", ""),
+                data.get("nozzle_target", ""),
+                data.get("bed_temp", ""),
+                data.get("bed_target", ""),
+                data.get("print_speed", ""),
+                data.get("fan_speed", ""),
+                data.get("percent_complete", ""),
+                data.get("time_remaining_min", ""),
+            ])
 
 # ── TELEMETRY PARSER ──────────────────────────────────────────────────────────
 def parse_telemetry(payload: dict) -> dict:
@@ -228,13 +257,13 @@ def telemetry_thread():
             with mqtt_cmd_lock:
                 global mqtt_cmd_client
                 mqtt_cmd_client = c
-            print("[MQTT] Connected and subscribed")
+            log.info("MQTT connected and subscribed")
         else:
-            print(f"[MQTT] Connection failed: {rc}")
+            log.error("MQTT connection failed: %s", rc)
 
     def on_disconnect(c, userdata, flags, rc, properties=None):
         mqtt_connected.clear()
-        print("[MQTT] Disconnected")
+        log.warning("MQTT disconnected")
 
     def on_message(c, userdata, msg, properties=None):
         try:
@@ -243,16 +272,19 @@ def telemetry_thread():
             if data:
                 with telemetry_lock:
                     telemetry.update(data)
+                    nz = telemetry["nozzle_temp"]
+                    nt = telemetry["nozzle_target"]
+                    bt = telemetry["bed_temp"]
+                    btt = telemetry["bed_target"]
                 log_to_csv(data)
                 with temp_history_lock:
                     temp_history["timestamps"].append(datetime.now().strftime("%H:%M:%S"))
-                    with telemetry_lock:
-                        temp_history["nozzle_temp"].append(telemetry["nozzle_temp"])
-                        temp_history["nozzle_target"].append(telemetry["nozzle_target"])
-                        temp_history["bed_temp"].append(telemetry["bed_temp"])
-                        temp_history["bed_target"].append(telemetry["bed_target"])
-        except Exception as e:
-            print(f"[MQTT] Parse error: {e}")
+                    temp_history["nozzle_temp"].append(nz)
+                    temp_history["nozzle_target"].append(nt)
+                    temp_history["bed_temp"].append(bt)
+                    temp_history["bed_target"].append(btt)
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+            log.warning("MQTT parse error: %s", e)
 
     client.on_connect = on_connect
     client.on_disconnect = on_disconnect
@@ -263,7 +295,7 @@ def telemetry_thread():
             client.loop_forever()
         except (TimeoutError, OSError) as e:
             mqtt_connected.clear()
-            print(f"[MQTT] Connection failed: {e} — retrying in 5s...")
+            log.error("MQTT connection failed: %s — retrying in 5s", e)
             time.sleep(5)
 
 # ── DETECTORS ─────────────────────────────────────────────────────────────────
@@ -379,20 +411,22 @@ def vision_thread():
             s.connect((cfg["printer_ip"], CAMERA_PORT))
             s.close()
         except (socket.timeout, OSError):
-            print(f"[Camera] Port {CAMERA_PORT} not available — retrying in 30s...")
+            log.info("Camera port %d not available — retrying in 30s", CAMERA_PORT)
             time.sleep(30)
             continue
 
+        raw = None
         sock = None
         try:
-            print(f"[Camera] Connecting to {cfg['printer_ip']}:{CAMERA_PORT}...")
+            log.info("Camera connecting to %s:%d", cfg["printer_ip"], CAMERA_PORT)
             raw = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             raw.settimeout(10)
             raw.connect((cfg["printer_ip"], CAMERA_PORT))
             sock = tls_ctx.wrap_socket(raw)
+            raw = None  # sock now owns the underlying socket
             sock.sendall(auth_data)
 
-            print("[Camera] Authenticated, receiving frames")
+            log.info("Camera authenticated, receiving frames")
             camera_available.set()
             os.makedirs(FAILURE_DIR, exist_ok=True)
 
@@ -404,7 +438,7 @@ def vision_thread():
             while True:
                 header = read_exact(sock, 16)
                 if header is None:
-                    print("[Camera] Connection closed")
+                    log.warning("Camera connection closed")
                     break
 
                 payload_size = struct.unpack_from('<I', header, 0)[0]
@@ -413,7 +447,7 @@ def vision_thread():
 
                 jpeg_data = read_exact(sock, payload_size)
                 if jpeg_data is None:
-                    print("[Camera] Connection lost during frame read")
+                    log.warning("Camera connection lost during frame read")
                     break
 
                 if not (jpeg_data[:4] == JPEG_START and jpeg_data[-2:] == JPEG_END):
@@ -452,20 +486,21 @@ def vision_thread():
                             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
                             path = os.path.join(FAILURE_DIR, f"{name}_{ts}.jpg")
                             cv2.imwrite(path, frame)
-                            print(f"[Snapshot] Saved: {path}")
+                            log.info("Snapshot saved: %s", path)
                             pause_print(name)
                             trigger_counts[name] = 0
                             break
 
         except Exception as e:
-            print(f"[Camera] Error: {e} — retrying in 5s...")
+            log.error("Camera error: %s — retrying in 5s", e)
         finally:
             camera_available.clear()
-            if sock:
-                try:
-                    sock.close()
-                except Exception:
-                    pass
+            for s in (sock, raw):
+                if s:
+                    try:
+                        s.close()
+                    except Exception:
+                        pass
         time.sleep(5)
 
 # ── FLASK APP ─────────────────────────────────────────────────────────────────
@@ -511,8 +546,14 @@ def api_config_post():
     errors = []
     if not ip:
         errors.append("Printer IP is required")
+    elif not re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", ip):
+        errors.append("Invalid IP address format")
+    elif any(int(octet) > 255 for octet in ip.split(".")):
+        errors.append("Invalid IP address: octet out of range")
     if not code:
         errors.append("Access Code is required")
+    elif len(code) < 4 or len(code) > 16:
+        errors.append("Access Code should be 4-16 characters")
     if not sn:
         errors.append("Serial Number is required")
     if errors:
@@ -543,6 +584,104 @@ def api_history():
             "bed_target": list(temp_history["bed_target"]),
         })
 
+@app.route("/history")
+def history_page():
+    if not config_ready.is_set():
+        return redirect("/")
+    cfg = get_config()
+    return render_template("history.html",
+                           printer_ip=cfg["printer_ip"],
+                           serial_number=cfg["serial_number"])
+
+# ── HISTORY JOB PARSER ───────────────────────────────────────────────────────
+def _safe_int(val):
+    try:
+        return int(float(val)) if val else 0
+    except (ValueError, TypeError):
+        return 0
+
+def _finalize_job(job):
+    duration = (job["end_time"] - job["start_time"]).total_seconds() / 60
+    end_state = job["end_state"]
+    if end_state == "FINISH" or job["last_percent"] >= 99:
+        status = "completed"
+    elif end_state == "FAILED":
+        status = "failed"
+    elif end_state == "RUNNING":
+        status = "printing"
+    else:
+        status = "cancelled"
+    return {
+        "start_time": job["start_time"].isoformat(),
+        "duration_min": round(duration, 1),
+        "total_layers": job["total_layers"],
+        "status": status,
+        "failure_reason": "",
+    }
+
+def parse_jobs_from_csv():
+    """Parse CSV telemetry into a list of print job dicts, most recent first."""
+    jobs = []
+    current_job = None
+    printing_states = {"RUNNING", "PREPARE", "PAUSE"}
+    terminal_states = {"IDLE", "FINISH", "FAILED"}
+    with csv_lock:
+        try:
+            with open(LOG_FILE, "r") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    state = row.get("print_state", "UNKNOWN").strip()
+                    ts_str = row.get("timestamp", "")
+                    try:
+                        ts = datetime.fromisoformat(ts_str)
+                    except (ValueError, TypeError):
+                        continue
+                    layer_cur = _safe_int(row.get("layer_current"))
+                    layer_tot = _safe_int(row.get("layer_total"))
+                    pct = _safe_int(row.get("percent_complete"))
+                    if current_job is None:
+                        if state in printing_states:
+                            current_job = {
+                                "start_time": ts, "end_time": None,
+                                "max_layer": layer_cur, "total_layers": layer_tot,
+                                "last_percent": pct, "end_state": None,
+                            }
+                    else:
+                        current_job["max_layer"] = max(current_job["max_layer"], layer_cur)
+                        current_job["total_layers"] = max(current_job["total_layers"], layer_tot)
+                        current_job["last_percent"] = pct
+                        if state in terminal_states:
+                            current_job["end_time"] = ts
+                            current_job["end_state"] = state
+                            jobs.append(_finalize_job(current_job))
+                            current_job = None
+                if current_job is not None:
+                    current_job["end_time"] = datetime.now()
+                    current_job["end_state"] = "RUNNING"
+                    jobs.append(_finalize_job(current_job))
+        except FileNotFoundError:
+            pass
+    jobs.reverse()
+    return jobs
+
+@app.route("/api/history/stats")
+def api_history_stats():
+    jobs = parse_jobs_from_csv()
+    finished = [j for j in jobs if j["status"] != "printing"]
+    total = len(finished)
+    success = sum(1 for j in finished if j["status"] == "completed")
+    total_time = sum(j["duration_min"] for j in finished)
+    return jsonify({
+        "total_prints": total,
+        "success_rate": round((success / total * 100) if total > 0 else 0, 1),
+        "total_print_time_min": round(total_time, 1),
+        "avg_duration_min": round((total_time / total) if total > 0 else 0, 1),
+    })
+
+@app.route("/api/history/jobs")
+def api_history_jobs():
+    return jsonify(parse_jobs_from_csv())
+
 @app.route("/api/camera/frame")
 def api_camera_frame():
     with frame_lock:
@@ -559,35 +698,39 @@ def api_pause():
 
 @app.route("/api/resume", methods=["POST"])
 def api_resume():
-    resume_monitoring()
+    resume_print()
     return jsonify({"status": "resumed"})
 
 @app.route("/events")
 def events():
     def stream():
-        while True:
-            with telemetry_lock:
-                data = telemetry.copy()
-            data["mqtt_connected"] = mqtt_connected.is_set()
-            data["camera_available"] = camera_available.is_set()
-            data["print_paused"] = print_paused.is_set()
-            with vision_lock:
-                data["detectors"] = {k: v.copy() for k, v in vision_status.items()}
-            yield f"data: {json.dumps(data)}\n\n"
-            time.sleep(2)
-    return Response(stream(), mimetype="text/event-stream")
+        try:
+            while True:
+                with telemetry_lock:
+                    data = telemetry.copy()
+                data["mqtt_connected"] = mqtt_connected.is_set()
+                data["camera_available"] = camera_available.is_set()
+                data["print_paused"] = print_paused.is_set()
+                with vision_lock:
+                    data["detectors"] = {k: v.copy() for k, v in vision_status.items()}
+                yield f"data: {json.dumps(data)}\n\n"
+                time.sleep(2)
+        except GeneratorExit:
+            pass
+    return Response(stream(), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 def main():
-    print("=" * 55)
-    print("  BAMBU A1 WEB MONITOR")
-    print("=" * 55)
+    log.info("=" * 55)
+    log.info("  BAMBU A1 WEB MONITOR")
+    log.info("=" * 55)
 
     init_csv()
     loaded = load_config()
 
     if not loaded:
-        print("[Config] No config found — open http://0.0.0.0:5000 to set up")
+        log.info("No config found — open http://0.0.0.0:5000 to set up")
 
     # Start background threads (they wait for config_ready)
     t_telemetry = threading.Thread(target=telemetry_thread, daemon=True)
@@ -596,7 +739,7 @@ def main():
     t_vision = threading.Thread(target=vision_thread, daemon=True)
     t_vision.start()
 
-    print("[Web] Dashboard at http://0.0.0.0:5000")
+    log.info("Dashboard at http://0.0.0.0:5000")
     app.run(host="0.0.0.0", port=5000, threaded=True)
 
 if __name__ == "__main__":

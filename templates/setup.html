@@ -111,6 +111,9 @@
     <div class="setup-card">
         <h1>Bambu A1 Monitor</h1>
         <p class="subtitle">Enter your printer details to get started.</p>
+        {% if printer_ip %}
+        <a href="/" style="color:#888;font-size:0.8rem;text-decoration:none;display:inline-block;margin-bottom:16px;">&larr; Back to Dashboard</a>
+        {% endif %}
 
         <div class="error-box" id="errorBox"></div>
 
@@ -144,10 +147,37 @@
             const errorBox = document.getElementById('errorBox');
             errorBox.classList.remove('visible');
 
+            const ip = document.getElementById('printerIp').value.trim();
+            const code = document.getElementById('accessCode').value.trim();
+            const sn = document.getElementById('serialNumber').value.trim();
+
+            // Client-side validation
+            const errors = [];
+            if (!ip) {
+                errors.push('Printer IP is required');
+            } else {
+                const ipMatch = ip.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+                if (!ipMatch || [ipMatch[1],ipMatch[2],ipMatch[3],ipMatch[4]].some(n => parseInt(n) > 255)) {
+                    errors.push('Invalid IP address format (e.g. 192.168.1.100)');
+                }
+            }
+            if (!code) {
+                errors.push('Access Code is required');
+            } else if (code.length < 4 || code.length > 16) {
+                errors.push('Access Code should be 4-16 characters');
+            }
+            if (!sn) errors.push('Serial Number is required');
+
+            if (errors.length > 0) {
+                errorBox.textContent = errors.join('. ');
+                errorBox.classList.add('visible');
+                return;
+            }
+
             const data = {
-                printer_ip: document.getElementById('printerIp').value.trim(),
-                access_code: document.getElementById('accessCode').value.trim(),
-                serial_number: document.getElementById('serialNumber').value.trim(),
+                printer_ip: ip,
+                access_code: code,
+                serial_number: sn,
             };
 
             btn.disabled = true;

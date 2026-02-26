@@ -8,33 +8,65 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
+        :root {
+            --bg-primary: #0f1117;
+            --bg-card: #161822;
+            --bg-input: #1e2030;
+            --border: #2a2d3a;
+            --text-primary: #e0e0e0;
+            --text-secondary: #888;
+            --text-muted: #666;
+            --text-white: #fff;
+            --chart-grid: #1e2030;
+        }
+
+        body.light {
+            --bg-primary: #f0f2f5;
+            --bg-card: #ffffff;
+            --bg-input: #e8eaed;
+            --border: #d0d3da;
+            --text-primary: #1a1a2e;
+            --text-secondary: #555;
+            --text-muted: #777;
+            --text-white: #111;
+            --chart-grid: #e0e0e0;
+        }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #0f1117;
-            color: #e0e0e0;
+            background: var(--bg-primary);
+            color: var(--text-primary);
             min-height: 100vh;
         }
 
         /* ── Header ─────────────────────────────── */
         header {
-            background: #161822;
-            border-bottom: 1px solid #2a2d3a;
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
             padding: 16px 24px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
         }
 
         .header-left h1 {
             font-size: 1.3rem;
             font-weight: 600;
-            color: #fff;
+            color: var(--text-white);
         }
 
         .header-left .subtitle {
             font-size: 0.8rem;
-            color: #888;
+            color: var(--text-secondary);
             margin-top: 2px;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
         }
 
         .conn-status {
@@ -55,13 +87,39 @@
         .status-dot.connected { background: #00c853; box-shadow: 0 0 6px #00c85366; }
         .status-dot.disconnected { background: #ff1744; box-shadow: 0 0 6px #ff174466; }
 
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .nav-link {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.85rem;
+            transition: color 0.2s;
+        }
+        .nav-link:hover { color: var(--text-primary); }
+
         .settings-link {
-            color: #666;
+            color: var(--text-muted);
             text-decoration: none;
             font-size: 1.3rem;
             transition: color 0.2s;
         }
-        .settings-link:hover { color: #aaa; }
+        .settings-link:hover { color: var(--text-primary); }
+
+        .theme-toggle {
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+        .theme-toggle:hover { color: var(--text-primary); border-color: var(--text-secondary); }
 
         /* ── Grid Layout ────────────────────────── */
         .dashboard {
@@ -75,8 +133,8 @@
         }
 
         .card {
-            background: #161822;
-            border: 1px solid #2a2d3a;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
             border-radius: 12px;
             padding: 20px;
         }
@@ -85,7 +143,7 @@
             font-size: 0.75rem;
             text-transform: uppercase;
             letter-spacing: 1px;
-            color: #888;
+            color: var(--text-secondary);
             margin-bottom: 14px;
         }
 
@@ -102,24 +160,31 @@
             display: block;
             font-size: 0.7rem;
             text-transform: uppercase;
-            color: #666;
+            color: var(--text-muted);
             margin-bottom: 4px;
         }
 
         .stat-block .value {
             font-size: 1.5rem;
             font-weight: 700;
-            color: #fff;
+            color: var(--text-white);
         }
 
         .stat-block .value.state {
             font-size: 1.1rem;
-            color: #64b5f6;
+        }
+
+        .loading-pulse {
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
         }
 
         .progress-bar-container {
             margin-top: 16px;
-            background: #1e2030;
+            background: var(--bg-input);
             border-radius: 6px;
             height: 8px;
             overflow: hidden;
@@ -136,7 +201,7 @@
         .progress-label {
             margin-top: 6px;
             font-size: 0.75rem;
-            color: #888;
+            color: var(--text-secondary);
             display: flex;
             justify-content: space-between;
         }
@@ -149,7 +214,7 @@
             justify-content: space-between;
             align-items: center;
             padding: 10px 0;
-            border-bottom: 1px solid #1e2030;
+            border-bottom: 1px solid var(--bg-input);
         }
 
         .temp-row:last-of-type { border-bottom: none; }
@@ -163,7 +228,7 @@
 
         .temp-value .target {
             font-size: 0.8rem;
-            color: #666;
+            color: var(--text-muted);
             font-weight: 400;
         }
 
@@ -183,7 +248,7 @@
             justify-content: space-between;
             align-items: center;
             padding: 10px 0;
-            border-bottom: 1px solid #1e2030;
+            border-bottom: 1px solid var(--bg-input);
         }
 
         .detector-row:last-child { border-bottom: none; }
@@ -209,13 +274,13 @@
 
         .detector-score {
             font-size: 0.8rem;
-            color: #666;
+            color: var(--text-muted);
             font-family: monospace;
         }
 
         .detector-count {
             font-size: 0.75rem;
-            color: #888;
+            color: var(--text-secondary);
         }
 
         /* ── Camera Card ────────────────────────── */
@@ -270,12 +335,12 @@
         .btn-pause:hover { background: #d50000; }
 
         .btn-resume {
-            background: #1e2030;
+            background: var(--bg-input);
             color: #69f0ae;
-            border: 1px solid #2a2d3a;
+            border: 1px solid var(--border);
         }
 
-        .btn-resume:hover { background: #2a2d3a; }
+        .btn-resume:hover { background: var(--border); }
 
         .pause-banner {
             display: none;
@@ -289,6 +354,32 @@
         }
 
         .pause-banner.visible { display: block; }
+
+        /* ── Toast Notifications ───────────────── */
+        .toast-container {
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .toast {
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: #fff;
+            opacity: 0;
+            transform: translateX(100%);
+            transition: all 0.3s ease;
+            max-width: 320px;
+        }
+        .toast.visible { opacity: 1; transform: translateX(0); }
+        .toast.success { background: #00c853; }
+        .toast.warning { background: #ff9100; }
+        .toast.error { background: #ff1744; }
 
         /* ── Responsive ─────────────────────────── */
         @media (max-width: 900px) {
@@ -310,20 +401,27 @@
     </style>
 </head>
 <body>
+    <div class="toast-container" id="toastContainer"></div>
+
     <!-- Header -->
     <header>
         <div class="header-left">
             <h1>Bambu A1 Monitor</h1>
             <div class="subtitle">{{ printer_ip }} &middot; {{ serial_number }}</div>
         </div>
-        <div class="conn-status">
-            <div class="status-dot" id="mqttDot"></div>
-            <span id="mqttLabel">Connecting...</span>
-            &nbsp;&nbsp;
-            <div class="status-dot" id="cameraDot"></div>
-            <span id="cameraLabel">Camera</span>
-            &nbsp;&nbsp;
-            <a href="/setup" class="settings-link" title="Settings">&#9881;</a>
+        <div class="header-right">
+            <div class="conn-status">
+                <div class="status-dot" id="mqttDot"></div>
+                <span id="mqttLabel">Connecting...</span>
+                &nbsp;&nbsp;
+                <div class="status-dot" id="cameraDot"></div>
+                <span id="cameraLabel">Camera</span>
+            </div>
+            <div class="nav-links">
+                <a href="/history" class="nav-link">History</a>
+                <a href="/setup" class="settings-link" title="Settings">&#9881;</a>
+                <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle theme"></button>
+            </div>
         </div>
     </header>
 
@@ -336,19 +434,19 @@
             <div class="status-grid">
                 <div class="stat-block">
                     <label>State</label>
-                    <div class="value state" id="printState">--</div>
+                    <div class="value state loading-pulse" id="printState">--</div>
                 </div>
                 <div class="stat-block">
                     <label>Layer</label>
-                    <div class="value" id="layerInfo">--</div>
+                    <div class="value loading-pulse" id="layerInfo">--</div>
                 </div>
                 <div class="stat-block">
                     <label>Speed</label>
-                    <div class="value" id="printSpeed">--</div>
+                    <div class="value loading-pulse" id="printSpeed">--</div>
                 </div>
                 <div class="stat-block">
                     <label>ETA</label>
-                    <div class="value" id="etaInfo">--</div>
+                    <div class="value loading-pulse" id="etaInfo">--</div>
                 </div>
             </div>
             <div class="progress-bar-container">
@@ -417,7 +515,7 @@
             <div class="camera-frame" id="cameraFrame">
                 <div class="camera-placeholder" id="cameraPlaceholder">
                     Camera not available<br>
-                    <small>Waiting for RTSP stream on port 322...</small>
+                    <small>Waiting for camera stream on port 6000...</small>
                 </div>
                 <img id="cameraImg" style="display:none;" alt="Camera Feed">
             </div>
@@ -426,15 +524,67 @@
         <!-- Controls -->
         <div class="card card-controls">
             <button class="btn btn-pause" onclick="pausePrint()">Pause Print</button>
-            <button class="btn btn-resume" onclick="resumeMonitoring()">Reset Triggers</button>
+            <button class="btn btn-resume" onclick="resumePrint()">Resume Print</button>
             <div class="pause-banner" id="pauseBanner">PRINT PAUSED — FAILURE DETECTED</div>
         </div>
     </div>
 
     <script>
+        // ── Theme ────────────────────────────────────
+        function applyTheme() {
+            var theme = localStorage.getItem('bambu-theme') || 'dark';
+            document.body.classList.toggle('light', theme === 'light');
+            document.getElementById('themeToggle').textContent = theme === 'light' ? '\u2600' : '\u263E';
+        }
+        function toggleTheme() {
+            var current = localStorage.getItem('bambu-theme') || 'dark';
+            localStorage.setItem('bambu-theme', current === 'dark' ? 'light' : 'dark');
+            applyTheme();
+        }
+        applyTheme();
+
+        // ── Toast Notifications ──────────────────────
+        function showToast(message, type) {
+            type = type || 'success';
+            var container = document.getElementById('toastContainer');
+            var toast = document.createElement('div');
+            toast.className = 'toast ' + type;
+            toast.textContent = message;
+            container.appendChild(toast);
+            requestAnimationFrame(function() {
+                toast.classList.add('visible');
+            });
+            setTimeout(function() {
+                toast.classList.remove('visible');
+                setTimeout(function() { toast.remove(); }, 300);
+            }, 3000);
+        }
+
+        // ── ETA Formatting ───────────────────────────
+        function formatEta(minutes) {
+            if (!minutes || minutes <= 0) return '--';
+            if (minutes < 60) return Math.round(minutes) + 'm';
+            var h = Math.floor(minutes / 60);
+            var m = Math.round(minutes % 60);
+            return h + 'h ' + (m < 10 ? '0' : '') + m + 'm';
+        }
+
+        // ── Print State Coloring ─────────────────────
+        function colorPrintState(el, state) {
+            switch (state) {
+                case 'RUNNING': el.style.color = '#00c853'; break;
+                case 'PAUSE':   el.style.color = '#ff9100'; break;
+                case 'FAILED':  el.style.color = '#ff1744'; break;
+                case 'FINISH':  el.style.color = '#69f0ae'; break;
+                case 'IDLE':    el.style.color = '#64b5f6'; break;
+                default:        el.style.color = ''; break;
+            }
+        }
+
         // ── Temperature Chart ─────────────────────────
-        const ctx = document.getElementById('tempChart').getContext('2d');
-        const tempChart = new Chart(ctx, {
+        var chartGridColor = getComputedStyle(document.documentElement).getPropertyValue('--chart-grid').trim() || '#1e2030';
+        var ctx = document.getElementById('tempChart').getContext('2d');
+        var tempChart = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: [],
@@ -487,12 +637,12 @@
                     x: {
                         display: true,
                         ticks: { color: '#555', maxTicksLimit: 6, font: { size: 10 } },
-                        grid: { color: '#1e2030' },
+                        grid: { color: chartGridColor },
                     },
                     y: {
                         display: true,
                         ticks: { color: '#555', font: { size: 10 } },
-                        grid: { color: '#1e2030' },
+                        grid: { color: chartGridColor },
                         suggestedMin: 0,
                         suggestedMax: 260,
                     },
@@ -509,94 +659,129 @@
 
         // Load initial history
         fetch('/api/history')
-            .then(r => r.json())
-            .then(h => {
+            .then(function(r) { return r.json(); })
+            .then(function(h) {
                 tempChart.data.labels = h.timestamps;
                 tempChart.data.datasets[0].data = h.nozzle_temp;
                 tempChart.data.datasets[1].data = h.nozzle_target;
                 tempChart.data.datasets[2].data = h.bed_temp;
                 tempChart.data.datasets[3].data = h.bed_target;
                 tempChart.update();
-            });
+            })
+            .catch(function() { console.warn('Failed to load temperature history'); });
 
-        // ── SSE Live Updates ──────────────────────────
-        const evtSource = new EventSource('/events');
+        // ── SSE Live Updates with Reconnection ───────
+        var evtSource = null;
+        var sseRetryTimer = null;
+        var firstUpdate = true;
 
-        evtSource.onmessage = function(event) {
-            const d = JSON.parse(event.data);
-
-            // Connection indicators
-            setDot('mqttDot', d.mqtt_connected);
-            document.getElementById('mqttLabel').textContent = d.mqtt_connected ? 'MQTT Connected' : 'MQTT Disconnected';
-            setDot('cameraDot', d.camera_available);
-            document.getElementById('cameraLabel').textContent = d.camera_available ? 'Camera OK' : 'Camera Off';
-
-            // Print status
-            document.getElementById('printState').textContent = d.print_state || '--';
-            document.getElementById('layerInfo').textContent = d.layer_current + ' / ' + d.layer_total;
-            document.getElementById('printSpeed').textContent = d.print_speed || '--';
-            const eta = d.time_remaining_min;
-            document.getElementById('etaInfo').textContent = eta > 0 ? eta + 'm' : '--';
-            document.getElementById('fanSpeed').textContent = d.fan_speed;
-
-            // Progress
-            const pct = d.percent_complete || 0;
-            document.getElementById('progressBar').style.width = pct + '%';
-            document.getElementById('progressText').textContent = pct + '%';
-
-            // Temperatures
-            document.getElementById('nozzleTemp').textContent = d.nozzle_temp;
-            document.getElementById('nozzleTarget').textContent = d.nozzle_target;
-            document.getElementById('bedTemp').textContent = d.bed_temp;
-            document.getElementById('bedTarget').textContent = d.bed_target;
-
-            // Append to chart
-            const now = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            tempChart.data.labels.push(now);
-            tempChart.data.datasets[0].data.push(d.nozzle_temp);
-            tempChart.data.datasets[1].data.push(d.nozzle_target);
-            tempChart.data.datasets[2].data.push(d.bed_temp);
-            tempChart.data.datasets[3].data.push(d.bed_target);
-            // Keep last 150 points on chart
-            if (tempChart.data.labels.length > 150) {
-                tempChart.data.labels.shift();
-                tempChart.data.datasets.forEach(ds => ds.data.shift());
+        function connectSSE() {
+            if (evtSource) {
+                evtSource.close();
             }
-            tempChart.update();
+            evtSource = new EventSource('/events');
 
-            // Detectors
-            if (d.detectors) {
-                for (const [name, info] of Object.entries(d.detectors)) {
-                    const row = document.getElementById('det-' + name);
-                    if (!row) continue;
-                    const dot = row.querySelector('.detector-dot');
-                    dot.classList.toggle('alert', info.triggered);
-                    row.querySelector('.detector-score').textContent = info.score.toFixed(3);
-                    row.querySelector('.detector-count').textContent = info.count + '/5';
+            evtSource.onmessage = function(event) {
+                var d = JSON.parse(event.data);
+
+                // Remove loading pulse on first update
+                if (firstUpdate) {
+                    document.querySelectorAll('.loading-pulse').forEach(function(el) {
+                        el.classList.remove('loading-pulse');
+                    });
+                    firstUpdate = false;
                 }
-            }
 
-            // Pause banner
-            document.getElementById('pauseBanner').classList.toggle('visible', d.print_paused);
-        };
+                // Connection indicators
+                setDot('mqttDot', d.mqtt_connected);
+                document.getElementById('mqttLabel').textContent = d.mqtt_connected ? 'MQTT Connected' : 'MQTT Disconnected';
+                setDot('cameraDot', d.camera_available);
+                document.getElementById('cameraLabel').textContent = d.camera_available ? 'Camera OK' : 'Camera Off';
 
-        evtSource.onerror = function() {
-            setDot('mqttDot', false);
-            document.getElementById('mqttLabel').textContent = 'Connection Lost';
-        };
+                // Print status
+                var stateEl = document.getElementById('printState');
+                stateEl.textContent = d.print_state || '--';
+                colorPrintState(stateEl, d.print_state);
+
+                document.getElementById('layerInfo').textContent = d.layer_current + ' / ' + d.layer_total;
+                document.getElementById('printSpeed').textContent = d.print_speed || '--';
+                document.getElementById('etaInfo').textContent = formatEta(d.time_remaining_min);
+                document.getElementById('fanSpeed').textContent = d.fan_speed;
+
+                // Progress
+                var pct = d.percent_complete || 0;
+                document.getElementById('progressBar').style.width = pct + '%';
+                document.getElementById('progressText').textContent = pct + '%';
+
+                // Temperatures
+                document.getElementById('nozzleTemp').textContent = d.nozzle_temp;
+                document.getElementById('nozzleTarget').textContent = d.nozzle_target;
+                document.getElementById('bedTemp').textContent = d.bed_temp;
+                document.getElementById('bedTarget').textContent = d.bed_target;
+
+                // Append to chart
+                var now = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                tempChart.data.labels.push(now);
+                tempChart.data.datasets[0].data.push(d.nozzle_temp);
+                tempChart.data.datasets[1].data.push(d.nozzle_target);
+                tempChart.data.datasets[2].data.push(d.bed_temp);
+                tempChart.data.datasets[3].data.push(d.bed_target);
+                // Keep last 150 points on chart
+                if (tempChart.data.labels.length > 150) {
+                    tempChart.data.labels.shift();
+                    tempChart.data.datasets.forEach(function(ds) { ds.data.shift(); });
+                }
+                tempChart.update();
+
+                // Detectors
+                if (d.detectors) {
+                    for (var name in d.detectors) {
+                        var info = d.detectors[name];
+                        var row = document.getElementById('det-' + name);
+                        if (!row) continue;
+                        var dot = row.querySelector('.detector-dot');
+                        dot.classList.toggle('alert', info.triggered);
+                        row.querySelector('.detector-score').textContent = info.score.toFixed(3);
+                        row.querySelector('.detector-count').textContent = info.count + '/5';
+                    }
+                }
+
+                // Pause banner
+                document.getElementById('pauseBanner').classList.toggle('visible', d.print_paused);
+            };
+
+            evtSource.onerror = function() {
+                setDot('mqttDot', false);
+                document.getElementById('mqttLabel').textContent = 'Reconnecting...';
+                evtSource.close();
+                if (!sseRetryTimer) {
+                    sseRetryTimer = setTimeout(function() {
+                        sseRetryTimer = null;
+                        connectSSE();
+                    }, 5000);
+                }
+            };
+        }
+
+        connectSSE();
+
+        // Clean up SSE on page unload
+        window.addEventListener('beforeunload', function() {
+            if (evtSource) evtSource.close();
+        });
 
         function setDot(id, ok) {
-            const el = document.getElementById(id);
+            var el = document.getElementById(id);
             el.classList.toggle('connected', ok);
             el.classList.toggle('disconnected', !ok);
         }
 
         // ── Camera Refresh ────────────────────────────
-        let cameraActive = false;
+        var cameraActive = false;
 
         function refreshCamera() {
-            const img = document.getElementById('cameraImg');
-            const placeholder = document.getElementById('cameraPlaceholder');
+            var img = document.getElementById('cameraImg');
+            var placeholder = document.getElementById('cameraPlaceholder');
 
             img.onload = function() {
                 if (!cameraActive) {
@@ -620,15 +805,18 @@
 
         // ── Controls ──────────────────────────────────
         function pausePrint() {
+            if (!confirm('Are you sure you want to pause the print?')) return;
             fetch('/api/pause', { method: 'POST' })
-                .then(r => r.json())
-                .then(() => console.log('Pause sent'));
+                .then(function(r) { return r.json(); })
+                .then(function() { showToast('Pause command sent', 'warning'); })
+                .catch(function() { showToast('Failed to send pause command', 'error'); });
         }
 
-        function resumeMonitoring() {
+        function resumePrint() {
             fetch('/api/resume', { method: 'POST' })
-                .then(r => r.json())
-                .then(() => console.log('Resume sent'));
+                .then(function(r) { return r.json(); })
+                .then(function() { showToast('Resume command sent', 'success'); })
+                .catch(function() { showToast('Failed to send resume command', 'error'); });
         }
     </script>
 </body>
