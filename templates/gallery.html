@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bambu A1 Monitor — Failure Snapshots</title>
+    <style>
+        :root {
+            --bg-primary: #0f1117;
+            --bg-card: #161822;
+            --bg-input: #1e2030;
+            --border: #2a2d3a;
+            --text-primary: #e0e0e0;
+            --text-secondary: #888;
+            --text-muted: #666;
+            --text-white: #fff;
+        }
+
+        body.light {
+            --bg-primary: #f0f2f5;
+            --bg-card: #ffffff;
+            --bg-input: #e8eaed;
+            --border: #d0d3da;
+            --text-primary: #1a1a2e;
+            --text-secondary: #555;
+            --text-muted: #777;
+            --text-white: #111;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        header {
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-left h1 {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: var(--text-white);
+        }
+
+        .header-left .subtitle {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .nav-link {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.85rem;
+            transition: color 0.2s;
+        }
+        .nav-link:hover { color: var(--text-primary); }
+
+        .theme-toggle {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 1.3rem;
+            cursor: pointer;
+            transition: color 0.2s;
+            padding: 4px;
+        }
+        .theme-toggle:hover { color: var(--text-primary); }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        .gallery-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+        }
+
+        .snapshot-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+            transition: border-color 0.2s;
+        }
+        .snapshot-card:hover { border-color: var(--text-muted); }
+
+        .snapshot-card img {
+            width: 100%;
+            display: block;
+            cursor: pointer;
+            aspect-ratio: 16/10;
+            object-fit: cover;
+        }
+
+        .snapshot-meta {
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .detector-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .detector-badge.Spaghetti { background: #ff174422; color: #ff1744; }
+        .detector-badge.LayerShift { background: #ff910022; color: #ff9100; }
+        .detector-badge.Warp { background: #42a5f522; color: #42a5f5; }
+        .detector-badge.Unknown { background: #88888822; color: #888; }
+
+        .snapshot-time {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 80px 20px;
+            color: var(--text-muted);
+        }
+
+        .empty-state .icon {
+            font-size: 3rem;
+            margin-bottom: 12px;
+            opacity: 0.3;
+        }
+
+        /* Lightbox */
+        .lightbox {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        .lightbox.open { display: flex; }
+
+        .lightbox img {
+            max-width: 90%;
+            max-height: 90%;
+            border-radius: 8px;
+        }
+
+        .lightbox-close {
+            position: absolute;
+            top: 20px;
+            right: 24px;
+            color: #fff;
+            font-size: 2rem;
+            cursor: pointer;
+            background: none;
+            border: none;
+            line-height: 1;
+        }
+
+        @media (max-width: 768px) {
+            .gallery-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-left">
+            <h1>Failure Snapshots</h1>
+            <div class="subtitle">{{ printer_ip }} &middot; {{ serial_number }}</div>
+        </div>
+        <div class="header-right">
+            <a href="/" class="nav-link">Dashboard</a>
+            <a href="/history" class="nav-link">History</a>
+            <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle theme"></button>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="gallery-grid" id="galleryGrid">
+            <div class="empty-state" id="loadingState">
+                <div class="icon">&#9881;</div>
+                Loading...
+            </div>
+        </div>
+    </div>
+
+    <div class="lightbox" id="lightbox" onclick="closeLightbox()">
+        <button class="lightbox-close" onclick="closeLightbox()">&times;</button>
+        <img id="lightboxImg" src="" alt="Snapshot">
+    </div>
+
+    <script>
+        // Theme
+        function applyTheme() {
+            var theme = localStorage.getItem('bambu-theme') || 'dark';
+            document.body.classList.toggle('light', theme === 'light');
+            document.getElementById('themeToggle').textContent = theme === 'light' ? '\u2600' : '\u263E';
+        }
+        function toggleTheme() {
+            var current = localStorage.getItem('bambu-theme') || 'dark';
+            localStorage.setItem('bambu-theme', current === 'dark' ? 'light' : 'dark');
+            applyTheme();
+        }
+        applyTheme();
+
+        // Lightbox
+        function openLightbox(url) {
+            document.getElementById('lightboxImg').src = url;
+            document.getElementById('lightbox').classList.add('open');
+        }
+
+        function closeLightbox() {
+            document.getElementById('lightbox').classList.remove('open');
+            document.getElementById('lightboxImg').src = '';
+        }
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') closeLightbox();
+        });
+
+        // Format timestamp
+        function formatTimestamp(iso) {
+            if (!iso) return '';
+            var d = new Date(iso);
+            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
+                   ' ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        }
+
+        // Load snapshots
+        fetch('/api/snapshots')
+            .then(function(r) { return r.json(); })
+            .then(function(snapshots) {
+                var grid = document.getElementById('galleryGrid');
+                grid.textContent = '';
+
+                if (snapshots.length === 0) {
+                    var empty = document.createElement('div');
+                    empty.className = 'empty-state';
+                    empty.style.gridColumn = '1 / -1';
+                    var icon = document.createElement('div');
+                    icon.className = 'icon';
+                    icon.textContent = '\uD83D\uDDBC';
+                    empty.appendChild(icon);
+                    var msg = document.createElement('div');
+                    msg.textContent = 'No failure snapshots yet.';
+                    empty.appendChild(msg);
+                    var sub = document.createElement('small');
+                    sub.textContent = 'Snapshots are saved automatically when failures are detected.';
+                    empty.appendChild(sub);
+                    grid.appendChild(empty);
+                    return;
+                }
+
+                snapshots.forEach(function(snap) {
+                    var card = document.createElement('div');
+                    card.className = 'snapshot-card';
+
+                    var img = document.createElement('img');
+                    img.src = snap.url;
+                    img.alt = snap.detector + ' detection';
+                    img.loading = 'lazy';
+                    img.onclick = function() { openLightbox(snap.url); };
+                    card.appendChild(img);
+
+                    var meta = document.createElement('div');
+                    meta.className = 'snapshot-meta';
+
+                    var badge = document.createElement('span');
+                    badge.className = 'detector-badge ' + snap.detector;
+                    badge.textContent = snap.detector;
+                    meta.appendChild(badge);
+
+                    var time = document.createElement('span');
+                    time.className = 'snapshot-time';
+                    time.textContent = formatTimestamp(snap.timestamp);
+                    meta.appendChild(time);
+
+                    card.appendChild(meta);
+                    grid.appendChild(card);
+                });
+            })
+            .catch(function() {
+                var grid = document.getElementById('galleryGrid');
+                grid.textContent = '';
+                var err = document.createElement('div');
+                err.className = 'empty-state';
+                err.style.gridColumn = '1 / -1';
+                err.textContent = 'Failed to load snapshots.';
+                grid.appendChild(err);
+            });
+    </script>
+</body>
+</html>

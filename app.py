@@ -25,7 +25,7 @@ import logging
 import threading
 from datetime import datetime
 from collections import deque
-from flask import Flask, render_template, Response, jsonify, request, redirect
+from flask import Flask, render_template, Response, jsonify, request, redirect, send_from_directory
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
 
@@ -43,10 +43,14 @@ CAMERA_PORT = 6000
 LOG_FILE    = "print_telemetry.csv"
 FAILURE_DIR = "failure_snapshots"
 
-SPAGHETTI_SENSITIVITY   = 0.6
-LAYER_SHIFT_SENSITIVITY = 0.5
-WARP_SENSITIVITY        = 0.5
-TRIGGER_FRAMES          = 5
+detector_settings = {
+    "spaghetti_sensitivity": 0.6,
+    "layer_shift_sensitivity": 0.5,
+    "warp_sensitivity": 0.5,
+    "trigger_frames": 5,
+}
+detector_settings_lock = threading.Lock()
+settings_changed = threading.Event()
 
 # Mutable printer config (set via web UI or config.json)
 config = {"printer_ip": "", "access_code": "", "serial_number": ""}
@@ -430,9 +434,11 @@ def vision_thread():
             camera_available.set()
             os.makedirs(FAILURE_DIR, exist_ok=True)
 
-            spaghetti   = SpaghettiDetector(SPAGHETTI_SENSITIVITY)
-            layer_shift = LayerShiftDetector(LAYER_SHIFT_SENSITIVITY)
-            warp        = WarpDetector(WARP_SENSITIVITY)
+            with detector_settings_lock:
+                ds = detector_settings.copy()
+            spaghetti   = SpaghettiDetector(ds["spaghetti_sensitivity"])
+            layer_shift = LayerShiftDetector(ds["layer_shift_sensitivity"])
+            warp        = WarpDetector(ds["warp_sensitivity"])
             trigger_counts = {"Spaghetti": 0, "LayerShift": 0, "Warp": 0}
 
             while True:
@@ -461,6 +467,16 @@ def vision_thread():
                 with frame_lock:
                     latest_frame = frame.copy()
 
+                # Re-create detectors if settings changed
+                if settings_changed.is_set():
+                    settings_changed.clear()
+                    with detector_settings_lock:
+                        ds = detector_settings.copy()
+                    spaghetti   = SpaghettiDetector(ds["spaghetti_sensitivity"])
+                    layer_shift = LayerShiftDetector(ds["layer_shift_sensitivity"])
+                    warp        = WarpDetector(ds["warp_sensitivity"])
+                    log.info("Detectors re-initialized with updated settings")
+
                 sp_trig, sp_score = spaghetti.detect(frame)
                 ls_trig, ls_score = layer_shift.detect(frame)
                 wp_trig, wp_score = warp.detect(frame)
@@ -481,8 +497,10 @@ def vision_thread():
                         vision_status[name]["count"] = trigger_counts[name]
 
                 if not print_paused.is_set():
+                    with detector_settings_lock:
+                        tf = detector_settings["trigger_frames"]
                     for name, count in trigger_counts.items():
-                        if count >= TRIGGER_FRAMES:
+                        if count >= tf:
                             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
                             path = os.path.join(FAILURE_DIR, f"{name}_{ts}.jpg")
                             cv2.imwrite(path, frame)
@@ -682,6 +700,153 @@ def api_history_stats():
 def api_history_jobs():
     return jsonify(parse_jobs_from_csv())
 
+# ── DETECTOR SETTINGS API ────────────────────────────────────────────────────
+@app.route("/api/detector-settings", methods=["GET"])
+def api_detector_settings_get():
+    with detector_settings_lock:
+        return jsonify(detector_settings.copy())
+
+@app.route("/api/detector-settings", methods=["POST"])
+def api_detector_settings_post():
+    data = request.get_json(silent=True) or {}
+    errors = []
+    for key in ("spaghetti_sensitivity", "layer_shift_sensitivity", "warp_sensitivity"):
+        if key in data:
+            try:
+                val = float(data[key])
+                if not (0.1 <= val <= 1.0):
+                    errors.append(f"{key} must be between 0.1 and 1.0")
+            except (ValueError, TypeError):
+                errors.append(f"{key} must be a number")
+    if "trigger_frames" in data:
+        try:
+            val = int(data["trigger_frames"])
+            if not (1 <= val <= 30):
+                errors.append("trigger_frames must be between 1 and 30")
+        except (ValueError, TypeError):
+            errors.append("trigger_frames must be an integer")
+    if errors:
+        return jsonify({"errors": errors}), 400
+    with detector_settings_lock:
+        for key in detector_settings:
+            if key in data:
+                if key == "trigger_frames":
+                    detector_settings[key] = int(data[key])
+                else:
+                    detector_settings[key] = float(data[key])
+    settings_changed.set()
+    log.info("Detector settings updated: %s", {k: detector_settings[k] for k in detector_settings})
+    return jsonify({"status": "updated"})
+
+# ── SNAPSHOT GALLERY API ─────────────────────────────────────────────────────
+@app.route("/snapshots/<path:filename>")
+def serve_snapshot(filename):
+    return send_from_directory(FAILURE_DIR, filename)
+
+@app.route("/api/snapshots")
+def api_snapshots():
+    snapshots = []
+    if os.path.isdir(FAILURE_DIR):
+        for fname in sorted(os.listdir(FAILURE_DIR), reverse=True):
+            if not fname.lower().endswith(".jpg"):
+                continue
+            match = re.match(r"^(\w+)_(\d{8})_(\d{6})\.jpg$", fname)
+            if match:
+                detector = match.group(1)
+                date_str = match.group(2)
+                time_str = match.group(3)
+                try:
+                    ts = datetime.strptime(date_str + time_str, "%Y%m%d%H%M%S")
+                    timestamp = ts.isoformat()
+                except ValueError:
+                    timestamp = ""
+            else:
+                detector = "Unknown"
+                timestamp = ""
+            snapshots.append({
+                "filename": fname,
+                "detector": detector,
+                "timestamp": timestamp,
+                "url": f"/snapshots/{fname}",
+            })
+    return jsonify(snapshots)
+
+@app.route("/gallery")
+def gallery_page():
+    if not config_ready.is_set():
+        return redirect("/")
+    cfg = get_config()
+    return render_template("gallery.html",
+                           printer_ip=cfg["printer_ip"],
+                           serial_number=cfg["serial_number"])
+
+# ── GCODE / PRINT CONTROL API ───────────────────────────────────────────────
+def send_gcode(gcode_line: str):
+    """Send a G-code command to the printer via MQTT."""
+    cfg = get_config()
+    topic = f"device/{cfg['serial_number']}/request"
+    payload = {
+        "print": {
+            "command": "gcode_line",
+            "sequence_id": next_sequence_id(),
+            "param": gcode_line + "\n",
+        }
+    }
+    with mqtt_cmd_lock:
+        if mqtt_cmd_client:
+            mqtt_cmd_client.publish(topic, json.dumps(payload))
+            return True
+    return False
+
+@app.route("/api/speed", methods=["POST"])
+def api_set_speed():
+    data = request.get_json(silent=True) or {}
+    try:
+        speed = int(data.get("speed_percent", 100))
+        if not (10 <= speed <= 300):
+            return jsonify({"error": "Speed must be 10-300%"}), 400
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid speed value"}), 400
+    if send_gcode(f"M220 S{speed}"):
+        log.info("Speed set to %d%%", speed)
+        return jsonify({"status": "ok", "speed_percent": speed})
+    return jsonify({"error": "MQTT not connected"}), 503
+
+@app.route("/api/temperature", methods=["POST"])
+def api_set_temperature():
+    data = request.get_json(silent=True) or {}
+    target = data.get("target")
+    try:
+        temp = int(data.get("value", 0))
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid temperature value"}), 400
+    if target == "nozzle":
+        if not (0 <= temp <= 300):
+            return jsonify({"error": "Nozzle temp must be 0-300"}), 400
+        gcode = f"M104 S{temp}"
+    elif target == "bed":
+        if not (0 <= temp <= 120):
+            return jsonify({"error": "Bed temp must be 0-120"}), 400
+        gcode = f"M140 S{temp}"
+    else:
+        return jsonify({"error": "target must be 'nozzle' or 'bed'"}), 400
+    if send_gcode(gcode):
+        log.info("%s temp set to %d", target.capitalize(), temp)
+        return jsonify({"status": "ok", "target": target, "value": temp})
+    return jsonify({"error": "MQTT not connected"}), 503
+
+# ── CSV EXPORT ───────────────────────────────────────────────────────────────
+@app.route("/api/export/csv")
+def api_export_csv():
+    if not os.path.exists(LOG_FILE):
+        return "", 204
+    return send_from_directory(
+        ".", LOG_FILE,
+        mimetype="text/csv",
+        as_attachment=True,
+        download_name=f"bambu_telemetry_{datetime.now().strftime('%Y%m%d')}.csv",
+    )
+
 @app.route("/api/camera/frame")
 def api_camera_frame():
     with frame_lock:
@@ -704,6 +869,8 @@ def api_resume():
 @app.route("/events")
 def events():
     def stream():
+        prev_state = None
+        prev_paused = False
         try:
             while True:
                 with telemetry_lock:
@@ -713,6 +880,24 @@ def events():
                 data["print_paused"] = print_paused.is_set()
                 with vision_lock:
                     data["detectors"] = {k: v.copy() for k, v in vision_status.items()}
+                with detector_settings_lock:
+                    data["trigger_frames"] = detector_settings["trigger_frames"]
+
+                current_state = data.get("print_state", "UNKNOWN")
+                current_paused = data["print_paused"]
+
+                # Emit named events for state transitions
+                if prev_state is not None:
+                    if prev_state == "RUNNING" and current_state == "FINISH":
+                        yield f"event: print_complete\ndata: {json.dumps({'message': 'Print completed successfully!'})}\n\n"
+                    if not prev_paused and current_paused:
+                        triggered = [n for n, info in data["detectors"].items() if info["triggered"]]
+                        reason = ", ".join(triggered) if triggered else "Manual pause"
+                        yield f"event: failure_detected\ndata: {json.dumps({'message': f'Print paused: {reason}', 'detectors': triggered})}\n\n"
+
+                prev_state = current_state
+                prev_paused = current_paused
+
                 yield f"data: {json.dumps(data)}\n\n"
                 time.sleep(2)
         except GeneratorExit:

@@ -309,6 +309,104 @@
             padding: 40px;
         }
 
+        /* ── Print Tuning Card ──────────────────── */
+        .card-tuning { grid-column: 1 / 4; }
+
+        .tuning-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+        }
+
+        .tuning-group label {
+            display: block;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        .tuning-input-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .tuning-input-row input[type="range"] { flex: 1; }
+
+        .tuning-input-row input[type="number"] {
+            width: 80px;
+            padding: 6px 10px;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+        }
+
+        .tuning-value {
+            font-family: monospace;
+            font-size: 0.9rem;
+            min-width: 50px;
+            text-align: right;
+        }
+
+        .btn-small {
+            padding: 6px 14px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            background: var(--bg-input);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-small:hover { background: var(--border); }
+
+        /* ── Detector Settings ─────────────────── */
+        .settings-toggle {
+            cursor: pointer;
+            user-select: none;
+            margin-top: 16px;
+            padding-top: 12px;
+            border-top: 1px solid var(--bg-input);
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .settings-toggle:hover { color: var(--text-secondary); }
+
+        .settings-panel { display: none; margin-top: 12px; }
+        .settings-panel.open { display: block; }
+
+        .setting-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .setting-row label {
+            font-size: 0.8rem;
+            width: 100px;
+            color: var(--text-secondary);
+        }
+
+        .setting-row input[type="range"] { flex: 1; }
+
+        .setting-row .setting-val {
+            font-family: monospace;
+            font-size: 0.8rem;
+            min-width: 36px;
+            text-align: right;
+            color: var(--text-primary);
+        }
+
         /* ── Controls Card ──────────────────────── */
         .card-controls {
             grid-column: 1 / 4;
@@ -390,9 +488,13 @@
             .card-temps,
             .card-camera,
             .card-controls,
-            .card-detectors {
+            .card-detectors,
+            .card-tuning {
                 grid-column: 1;
                 grid-row: auto;
+            }
+            .tuning-grid {
+                grid-template-columns: 1fr;
             }
             .status-grid {
                 grid-template-columns: 1fr 1fr;
@@ -419,6 +521,7 @@
             </div>
             <div class="nav-links">
                 <a href="/history" class="nav-link">History</a>
+                <a href="/gallery" class="nav-link">Snapshots</a>
                 <a href="/setup" class="settings-link" title="Settings">&#9881;</a>
                 <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle theme"></button>
             </div>
@@ -507,6 +610,33 @@
                 <span class="detector-score">0.000</span>
                 <span class="detector-count">0/5</span>
             </div>
+
+            <div class="settings-toggle" onclick="toggleDetectorSettings()">
+                Sensitivity Settings <span id="settingsArrow">&#9660;</span>
+            </div>
+            <div class="settings-panel" id="detectorSettingsPanel">
+                <div class="setting-row">
+                    <label>Spaghetti</label>
+                    <input type="range" min="0.1" max="1.0" step="0.1" id="setSpaghetti" oninput="document.getElementById('setSpaghettiVal').textContent=this.value">
+                    <span class="setting-val" id="setSpaghettiVal">0.6</span>
+                </div>
+                <div class="setting-row">
+                    <label>Layer Shift</label>
+                    <input type="range" min="0.1" max="1.0" step="0.1" id="setLayerShift" oninput="document.getElementById('setLayerShiftVal').textContent=this.value">
+                    <span class="setting-val" id="setLayerShiftVal">0.5</span>
+                </div>
+                <div class="setting-row">
+                    <label>Warp</label>
+                    <input type="range" min="0.1" max="1.0" step="0.1" id="setWarp" oninput="document.getElementById('setWarpVal').textContent=this.value">
+                    <span class="setting-val" id="setWarpVal">0.5</span>
+                </div>
+                <div class="setting-row">
+                    <label>Trigger Frames</label>
+                    <input type="range" min="1" max="30" step="1" id="setTriggerFrames" oninput="document.getElementById('setTriggerFramesVal').textContent=this.value">
+                    <span class="setting-val" id="setTriggerFramesVal">5</span>
+                </div>
+                <button class="btn btn-resume" onclick="saveDetectorSettings()" style="margin-top:8px;width:100%;">Apply</button>
+            </div>
         </div>
 
         <!-- Camera -->
@@ -518,6 +648,37 @@
                     <small>Waiting for camera stream on port 6000...</small>
                 </div>
                 <img id="cameraImg" style="display:none;" alt="Camera Feed">
+            </div>
+        </div>
+
+        <!-- Print Tuning -->
+        <div class="card card-tuning">
+            <div class="card-title">Print Tuning</div>
+            <div class="tuning-grid">
+                <div class="tuning-group">
+                    <label>Speed</label>
+                    <div class="tuning-input-row">
+                        <input type="range" min="10" max="300" step="10" value="100" id="speedSlider" oninput="document.getElementById('speedValue').textContent=this.value+'%'">
+                        <span class="tuning-value" id="speedValue">100%</span>
+                        <button class="btn-small" onclick="setSpeed()">Set</button>
+                    </div>
+                </div>
+                <div class="tuning-group">
+                    <label>Nozzle Target</label>
+                    <div class="tuning-input-row">
+                        <input type="number" min="0" max="300" step="5" id="nozzleTempInput" placeholder="220">
+                        <span>&deg;C</span>
+                        <button class="btn-small" onclick="setTemp('nozzle')">Set</button>
+                    </div>
+                </div>
+                <div class="tuning-group">
+                    <label>Bed Target</label>
+                    <div class="tuning-input-row">
+                        <input type="number" min="0" max="120" step="5" id="bedTempInput" placeholder="60">
+                        <span>&deg;C</span>
+                        <button class="btn-small" onclick="setTemp('bed')">Set</button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -742,13 +903,31 @@
                         var dot = row.querySelector('.detector-dot');
                         dot.classList.toggle('alert', info.triggered);
                         row.querySelector('.detector-score').textContent = info.score.toFixed(3);
-                        row.querySelector('.detector-count').textContent = info.count + '/5';
+                        var tf = d.trigger_frames || 5;
+                        row.querySelector('.detector-count').textContent = info.count + '/' + tf;
                     }
                 }
+
+                // Update tuning placeholders with current targets
+                document.getElementById('nozzleTempInput').placeholder = d.nozzle_target || '220';
+                document.getElementById('bedTempInput').placeholder = d.bed_target || '60';
 
                 // Pause banner
                 document.getElementById('pauseBanner').classList.toggle('visible', d.print_paused);
             };
+
+            // Named SSE events for notifications
+            evtSource.addEventListener('print_complete', function(event) {
+                var d = JSON.parse(event.data);
+                showToast(d.message, 'success');
+                sendBrowserNotification('Bambu A1 Monitor', d.message, 'print-complete');
+            });
+
+            evtSource.addEventListener('failure_detected', function(event) {
+                var d = JSON.parse(event.data);
+                showToast(d.message, 'error');
+                sendBrowserNotification('Bambu A1 Monitor', d.message, 'failure-detected');
+            });
 
             evtSource.onerror = function() {
                 setDot('mqttDot', false);
@@ -818,6 +997,101 @@
                 .then(function() { showToast('Resume command sent', 'success'); })
                 .catch(function() { showToast('Failed to send resume command', 'error'); });
         }
+
+        // ── Detector Sensitivity Settings ────────────
+        function toggleDetectorSettings() {
+            var panel = document.getElementById('detectorSettingsPanel');
+            var arrow = document.getElementById('settingsArrow');
+            panel.classList.toggle('open');
+            arrow.textContent = panel.classList.contains('open') ? '\u25B2' : '\u25BC';
+        }
+
+        function loadDetectorSettings() {
+            fetch('/api/detector-settings')
+                .then(function(r) { return r.json(); })
+                .then(function(s) {
+                    document.getElementById('setSpaghetti').value = s.spaghetti_sensitivity;
+                    document.getElementById('setSpaghettiVal').textContent = s.spaghetti_sensitivity;
+                    document.getElementById('setLayerShift').value = s.layer_shift_sensitivity;
+                    document.getElementById('setLayerShiftVal').textContent = s.layer_shift_sensitivity;
+                    document.getElementById('setWarp').value = s.warp_sensitivity;
+                    document.getElementById('setWarpVal').textContent = s.warp_sensitivity;
+                    document.getElementById('setTriggerFrames').value = s.trigger_frames;
+                    document.getElementById('setTriggerFramesVal').textContent = s.trigger_frames;
+                })
+                .catch(function() {});
+        }
+        loadDetectorSettings();
+
+        function saveDetectorSettings() {
+            var payload = {
+                spaghetti_sensitivity: parseFloat(document.getElementById('setSpaghetti').value),
+                layer_shift_sensitivity: parseFloat(document.getElementById('setLayerShift').value),
+                warp_sensitivity: parseFloat(document.getElementById('setWarp').value),
+                trigger_frames: parseInt(document.getElementById('setTriggerFrames').value),
+            };
+            fetch('/api/detector-settings', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload),
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (d.errors) { showToast(d.errors.join(', '), 'error'); }
+                else { showToast('Detector settings updated', 'success'); }
+            })
+            .catch(function() { showToast('Failed to save settings', 'error'); });
+        }
+
+        // ── Print Tuning Controls ────────────────────
+        function setSpeed() {
+            var speed = document.getElementById('speedSlider').value;
+            fetch('/api/speed', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({speed_percent: parseInt(speed)}),
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (d.error) { showToast(d.error, 'error'); }
+                else { showToast('Speed set to ' + speed + '%', 'success'); }
+            })
+            .catch(function() { showToast('Failed to set speed', 'error'); });
+        }
+
+        function setTemp(target) {
+            var inputId = target === 'nozzle' ? 'nozzleTempInput' : 'bedTempInput';
+            var value = parseInt(document.getElementById(inputId).value);
+            if (isNaN(value)) { showToast('Enter a valid temperature', 'warning'); return; }
+            fetch('/api/temperature', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({target: target, value: value}),
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (d.error) { showToast(d.error, 'error'); }
+                else { showToast(target.charAt(0).toUpperCase() + target.slice(1) + ' target set to ' + value + '\u00B0C', 'success'); }
+            })
+            .catch(function() { showToast('Failed to set temperature', 'error'); });
+        }
+
+        // ── Browser Notifications ────────────────────
+        function requestNotificationPermission() {
+            if ('Notification' in window && Notification.permission === 'default') {
+                Notification.requestPermission();
+            }
+        }
+
+        function sendBrowserNotification(title, body, tag) {
+            if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification(title, { body: body, tag: tag });
+            }
+        }
+
+        document.addEventListener('click', function() {
+            requestNotificationPermission();
+        }, { once: true });
     </script>
 </body>
 </html>

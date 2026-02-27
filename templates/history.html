@@ -176,6 +176,20 @@
         .status-badge.cancelled { background: #ff910022; color: #ff9100; }
         .status-badge.printing { background: #42a5f522; color: #42a5f5; }
 
+        .btn-export {
+            display: inline-block;
+            padding: 6px 16px;
+            background: var(--bg-input);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+        .btn-export:hover { background: var(--border); }
+
         .empty-state {
             text-align: center;
             padding: 60px 20px;
@@ -202,6 +216,7 @@
         </div>
         <div class="header-right">
             <a href="/" class="nav-link">Dashboard</a>
+            <a href="/gallery" class="nav-link">Snapshots</a>
             <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle theme">&#9790;</button>
         </div>
     </header>
@@ -229,7 +244,10 @@
 
         <!-- Job History Table -->
         <div class="history-card">
-            <div class="card-title">Print Jobs</div>
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:20px 20px 14px;">
+                <div class="card-title" style="margin:0; padding:0;">Print Jobs</div>
+                <a href="/api/export/csv" class="btn-export" download>&#11015; Export CSV</a>
+            </div>
             <table class="job-table">
                 <thead>
                     <tr>
