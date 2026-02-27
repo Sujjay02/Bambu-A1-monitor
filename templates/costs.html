@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bambu A1 Monitor — Print Costs</title>
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#0f1117">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #0f1117; --bg-card: #161822; --bg-input: #1e2030;
+            --border: #2a2d3a; --text-primary: #e0e0e0; --text-secondary: #888;
+            --text-muted: #666; --text-white: #fff;
+        }
+        body.light {
+            --bg-primary: #f0f2f5; --bg-card: #ffffff; --bg-input: #e8eaed;
+            --border: #d0d3da; --text-primary: #1a1a2e; --text-secondary: #555;
+            --text-muted: #777; --text-white: #111;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg-primary); color: var(--text-primary); min-height: 100vh; }
+
+        header { background: var(--bg-card); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+        .header-left h1 { font-size: 1.3rem; font-weight: 600; color: var(--text-white); }
+        .header-left .subtitle { font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px; }
+        .header-right { display: flex; align-items: center; gap: 16px; }
+        .nav-link { color: var(--text-muted); text-decoration: none; font-size: 0.85rem; }
+        .nav-link:hover { color: var(--text-primary); }
+        .theme-toggle { background: none; border: none; color: var(--text-muted); font-size: 1.3rem; cursor: pointer; padding: 4px; }
+
+        .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+
+        /* Config Bar */
+        .config-bar {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+            padding: 16px 20px; margin-bottom: 24px;
+            display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+        }
+        .config-bar label { font-size: 0.8rem; color: var(--text-secondary); }
+        .config-bar input {
+            width: 90px; padding: 6px 10px; background: var(--bg-input); border: 1px solid var(--border);
+            border-radius: 6px; color: var(--text-primary); font-size: 0.9rem;
+        }
+        .config-bar .btn {
+            padding: 8px 20px; background: #00c853; color: #fff; border: none;
+            border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer;
+        }
+        .config-bar .btn:hover { background: #00a844; }
+
+        /* Summary Cards */
+        .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+        .summary-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; text-align: center; }
+        .summary-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-secondary); margin-bottom: 8px; }
+        .summary-value { font-size: 1.8rem; font-weight: 700; color: var(--text-white); }
+        .summary-value.green { color: #00c853; }
+        .summary-value.blue { color: #42a5f5; }
+        .summary-value.orange { color: #ff9100; }
+        .summary-sub { font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; }
+
+        /* Chart + Table */
+        .content-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .chart-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+        .chart-title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-secondary); margin-bottom: 14px; }
+        .chart-container { position: relative; height: 280px; }
+
+        .table-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+        .cost-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+        .cost-table th { text-align: left; padding: 10px 14px; font-size: 0.7rem; text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--border); background: var(--bg-input); }
+        .cost-table td { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+        .cost-table tr:last-child td { border-bottom: none; }
+        .cost-table .cost { font-family: monospace; font-weight: 600; }
+        .cost-table .cost.green { color: #00c853; }
+        .cost-table .cost.red { color: #ff1744; }
+
+        .empty-state { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+
+        @media (max-width: 768px) {
+            .summary-grid { grid-template-columns: repeat(2, 1fr); }
+            .content-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-left">
+            <h1>Print Costs</h1>
+            <div class="subtitle">{{ printer_ip }} &middot; {{ serial_number }}</div>
+        </div>
+        <div class="header-right">
+            <a href="/" class="nav-link">Dashboard</a>
+            <a href="/analytics" class="nav-link">Analytics</a>
+            <a href="/status" class="nav-link">Status</a>
+            <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()"></button>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="config-bar">
+            <div>
+                <label>Filament Cost</label><br>
+                <input type="number" id="costPerKg" value="25" min="0" step="1"> <span style="font-size:0.8rem;color:var(--text-muted)">$/kg</span>
+            </div>
+            <div>
+                <label>Electricity Cost</label><br>
+                <input type="number" id="powerCost" value="0.12" min="0" step="0.01"> <span style="font-size:0.8rem;color:var(--text-muted)">$/kWh</span>
+            </div>
+            <button class="btn" onclick="loadCosts()">Recalculate</button>
+        </div>
+
+        <div class="summary-grid">
+            <div class="summary-card">
+                <div class="summary-label">Total Cost</div>
+                <div class="summary-value green" id="totalCost">--</div>
+                <div class="summary-sub" id="totalPrints"></div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-label">Filament Used</div>
+                <div class="summary-value blue" id="filamentUsed">--</div>
+                <div class="summary-sub" id="filamentCost"></div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-label">Power Cost</div>
+                <div class="summary-value orange" id="powerTotal">--</div>
+                <div class="summary-sub" id="totalHours"></div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-label">Avg Cost/Print</div>
+                <div class="summary-value" id="avgCost">--</div>
+                <div class="summary-sub">per print</div>
+            </div>
+        </div>
+
+        <div class="content-grid">
+            <div class="chart-card">
+                <div class="chart-title">Cost Breakdown</div>
+                <div class="chart-container"><canvas id="costChart"></canvas></div>
+            </div>
+            <div class="table-card">
+                <table class="cost-table">
+                    <thead><tr><th>Date</th><th>Duration</th><th>Filament</th><th>Cost</th><th>Status</th></tr></thead>
+                    <tbody id="costBody">
+                        <tr><td colspan="5" class="empty-state">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function applyTheme() {
+            var theme = localStorage.getItem('bambu-theme') || 'dark';
+            document.body.classList.toggle('light', theme === 'light');
+            document.getElementById('themeToggle').textContent = theme === 'light' ? '\u2600' : '\u263E';
+        }
+        function toggleTheme() {
+            var current = localStorage.getItem('bambu-theme') || 'dark';
+            localStorage.setItem('bambu-theme', current === 'dark' ? 'light' : 'dark');
+            applyTheme();
+        }
+        applyTheme();
+
+        var costChartInstance = null;
+
+        function formatDur(min) {
+            if (!min || min <= 0) return '--';
+            if (min < 60) return Math.round(min) + 'm';
+            return Math.floor(min / 60) + 'h ' + Math.round(min % 60) + 'm';
+        }
+
+        function formatDate(iso) {
+            if (!iso) return '--';
+            var d = new Date(iso);
+            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }
+
+        function loadCosts() {
+            var cpk = document.getElementById('costPerKg').value;
+            var pc = document.getElementById('powerCost').value;
+
+            fetch('/api/costs?cost_per_kg=' + cpk + '&power_cost_kwh=' + pc)
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var s = data.summary;
+                    document.getElementById('totalCost').textContent = '$' + s.total_cost.toFixed(2);
+                    document.getElementById('totalPrints').textContent = s.total_prints + ' prints';
+                    document.getElementById('filamentUsed').textContent = s.est_filament_kg + ' kg';
+                    document.getElementById('filamentCost').textContent = '$' + s.filament_cost.toFixed(2);
+                    document.getElementById('powerTotal').textContent = '$' + s.power_cost.toFixed(2);
+                    document.getElementById('totalHours').textContent = s.total_time_hours + ' hours';
+                    document.getElementById('avgCost').textContent = '$' + s.avg_cost_per_print.toFixed(2);
+
+                    // Doughnut chart
+                    if (costChartInstance) costChartInstance.destroy();
+                    costChartInstance = new Chart(document.getElementById('costChart'), {
+                        type: 'doughnut',
+                        data: {
+                            labels: ['Filament', 'Electricity'],
+                            datasets: [{
+                                data: [s.filament_cost, s.power_cost],
+                                backgroundColor: ['#42a5f5', '#ff9100'],
+                                borderWidth: 0,
+                            }],
+                        },
+                        options: {
+                            responsive: true, maintainAspectRatio: false,
+                            plugins: {
+                                legend: { position: 'bottom', labels: { color: '#888', font: { size: 12 }, padding: 20 } },
+                            },
+                            cutout: '65%',
+                        },
+                    });
+
+                    // Job table
+                    var tbody = document.getElementById('costBody');
+                    tbody.textContent = '';
+                    if (data.jobs.length === 0) {
+                        var tr = document.createElement('tr');
+                        var td = document.createElement('td');
+                        td.colSpan = 5; td.className = 'empty-state';
+                        td.textContent = 'No completed prints yet.';
+                        tr.appendChild(td); tbody.appendChild(tr);
+                        return;
+                    }
+                    data.jobs.slice().reverse().forEach(function(j) {
+                        var tr = document.createElement('tr');
+                        var tdDate = document.createElement('td');
+                        tdDate.textContent = formatDate(j.start_time);
+                        tr.appendChild(tdDate);
+                        var tdDur = document.createElement('td');
+                        tdDur.textContent = formatDur(j.duration_min);
+                        tr.appendChild(tdDur);
+                        var tdFil = document.createElement('td');
+                        tdFil.textContent = j.est_filament_g + 'g';
+                        tr.appendChild(tdFil);
+                        var tdCost = document.createElement('td');
+                        tdCost.className = 'cost ' + (j.status === 'completed' ? 'green' : 'red');
+                        tdCost.textContent = '$' + j.total_cost.toFixed(2);
+                        tr.appendChild(tdCost);
+                        var tdStatus = document.createElement('td');
+                        tdStatus.textContent = j.status;
+                        tr.appendChild(tdStatus);
+                        tbody.appendChild(tr);
+                    });
+                })
+                .catch(function() {});
+        }
+
+        loadCosts();
+    </script>
+</body>
+</html>

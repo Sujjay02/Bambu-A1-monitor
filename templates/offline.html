@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bambu A1 Monitor — Offline</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f1117; color: #e0e0e0;
+            min-height: 100vh; display: flex; align-items: center; justify-content: center;
+        }
+        .offline-card {
+            text-align: center; padding: 60px 40px;
+            background: #161822; border: 1px solid #2a2d3a; border-radius: 16px;
+            max-width: 400px;
+        }
+        .offline-icon { font-size: 4rem; margin-bottom: 16px; opacity: 0.4; }
+        h1 { font-size: 1.4rem; margin-bottom: 8px; }
+        p { color: #888; font-size: 0.9rem; line-height: 1.6; }
+        .retry-btn {
+            margin-top: 24px; padding: 10px 28px; background: #00c853; color: #fff;
+            border: none; border-radius: 8px; font-size: 0.9rem; font-weight: 600;
+            cursor: pointer; transition: background 0.2s;
+        }
+        .retry-btn:hover { background: #00a844; }
+    </style>
+</head>
+<body>
+    <div class="offline-card">
+        <div class="offline-icon">&#9888;</div>
+        <h1>You're Offline</h1>
+        <p>The Bambu A1 Monitor requires a network connection to communicate with your printer.</p>
+        <button class="retry-btn" onclick="location.reload()">Retry Connection</button>
+    </div>
+</body>
+</html>

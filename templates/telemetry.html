@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bambu A1 Monitor — Live Telemetry</title>
+    <style>
+        :root {
+            --bg-primary: #0f1117;
+            --bg-card: #161822;
+            --bg-input: #1e2030;
+            --border: #2a2d3a;
+            --text-primary: #e0e0e0;
+            --text-secondary: #888;
+            --text-muted: #666;
+            --text-white: #fff;
+        }
+
+        body.light {
+            --bg-primary: #f0f2f5;
+            --bg-card: #ffffff;
+            --bg-input: #e8eaed;
+            --border: #d0d3da;
+            --text-primary: #1a1a2e;
+            --text-secondary: #555;
+            --text-muted: #777;
+            --text-white: #111;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        header {
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .header-left h1 { font-size: 1.3rem; font-weight: 600; color: var(--text-white); }
+        .header-left .subtitle { font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px; }
+
+        .header-right { display: flex; align-items: center; gap: 16px; }
+
+        .nav-link { color: var(--text-muted); text-decoration: none; font-size: 0.85rem; transition: color 0.2s; }
+        .nav-link:hover { color: var(--text-primary); }
+
+        .theme-toggle {
+            background: none; border: none; color: var(--text-muted);
+            font-size: 1.3rem; cursor: pointer; transition: color 0.2s; padding: 4px;
+        }
+        .theme-toggle:hover { color: var(--text-primary); }
+
+        .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+
+        /* ── Controls Bar ──────────────────────── */
+        .controls-bar {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .live-dot {
+            width: 10px; height: 10px; border-radius: 50%;
+            background: #00c853; box-shadow: 0 0 6px #00c85366;
+            animation: blink 2s ease-in-out infinite;
+        }
+        .live-dot.paused { background: #ff9100; box-shadow: 0 0 6px #ff910066; animation: none; }
+        @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+        .live-label { font-size: 0.85rem; font-weight: 600; }
+
+        .controls-bar .spacer { flex: 1; }
+
+        .toggle-btn {
+            padding: 6px 16px; border-radius: 6px; font-size: 0.8rem; font-weight: 600;
+            cursor: pointer; transition: all 0.2s;
+            background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border);
+        }
+        .toggle-btn:hover { background: var(--border); }
+        .toggle-btn.active { background: #00c85322; color: #00c853; border-color: #00c85355; }
+
+        .row-count { font-size: 0.8rem; color: var(--text-muted); }
+
+        /* ── Table ─────────────────────────────── */
+        .table-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .table-scroll {
+            max-height: calc(100vh - 220px);
+            overflow-y: auto;
+            scroll-behavior: smooth;
+        }
+
+        .telem-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.82rem;
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+        }
+
+        .telem-table thead { position: sticky; top: 0; z-index: 1; }
+
+        .telem-table th {
+            text-align: left;
+            padding: 10px 12px;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-input);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            white-space: nowrap;
+        }
+
+        .telem-table td {
+            padding: 7px 12px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-primary);
+            white-space: nowrap;
+        }
+
+        .telem-table tr:last-child td { border-bottom: none; }
+
+        .telem-table tbody tr { transition: background 0.15s; }
+        .telem-table tbody tr:hover { background: var(--bg-input); }
+
+        /* New row highlight */
+        .telem-table tbody tr.new-row {
+            animation: rowFlash 1.5s ease-out;
+        }
+        @keyframes rowFlash {
+            0% { background: #00c85322; }
+            100% { background: transparent; }
+        }
+
+        /* State coloring */
+        .state-running { color: #00c853; }
+        .state-pause { color: #ff9100; }
+        .state-failed { color: #ff1744; }
+        .state-finish { color: #69f0ae; }
+        .state-idle { color: #64b5f6; }
+        .state-prepare { color: #ce93d8; }
+
+        .temp-nozzle { color: #ff7043; }
+        .temp-bed { color: #42a5f5; }
+
+        .empty-state {
+            text-align: center; padding: 60px 20px; color: var(--text-muted);
+        }
+        .empty-state .icon { font-size: 3rem; margin-bottom: 12px; opacity: 0.3; }
+
+        @media (max-width: 900px) {
+            .telem-table { font-size: 0.72rem; }
+            .telem-table th, .telem-table td { padding: 6px 8px; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-left">
+            <h1>Live Telemetry</h1>
+            <div class="subtitle">{{ printer_ip }} &middot; {{ serial_number }}</div>
+        </div>
+        <div class="header-right">
+            <a href="/" class="nav-link">Dashboard</a>
+            <a href="/history" class="nav-link">History</a>
+            <a href="/gallery" class="nav-link">Snapshots</a>
+            <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle theme"></button>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="controls-bar">
+            <div class="live-dot" id="liveDot"></div>
+            <span class="live-label" id="liveLabel">Live</span>
+            <span class="row-count" id="rowCount"></span>
+            <div class="spacer"></div>
+            <button class="toggle-btn active" id="autoScrollBtn" onclick="toggleAutoScroll()">Auto-scroll</button>
+            <button class="toggle-btn" id="pauseFeedBtn" onclick="togglePauseFeed()">Pause Feed</button>
+        </div>
+
+        <div class="table-card">
+            <div class="table-scroll" id="tableScroll">
+                <table class="telem-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>State</th>
+                            <th>Layer</th>
+                            <th>Progress</th>
+                            <th>Nozzle</th>
+                            <th>Nozzle Tgt</th>
+                            <th>Bed</th>
+                            <th>Bed Tgt</th>
+                            <th>Speed</th>
+                            <th>Fan</th>
+                            <th>ETA</th>
+                        </tr>
+                    </thead>
+                    <tbody id="telemBody">
+                        <tr>
+                            <td colspan="11" class="empty-state">
+                                <div class="icon">&#9881;</div>
+                                Loading telemetry...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ── Theme ────────────────────────────────────
+        function applyTheme() {
+            var theme = localStorage.getItem('bambu-theme') || 'dark';
+            document.body.classList.toggle('light', theme === 'light');
+            document.getElementById('themeToggle').textContent = theme === 'light' ? '\u2600' : '\u263E';
+        }
+        function toggleTheme() {
+            var current = localStorage.getItem('bambu-theme') || 'dark';
+            localStorage.setItem('bambu-theme', current === 'dark' ? 'light' : 'dark');
+            applyTheme();
+        }
+        applyTheme();
+
+        // ── State ────────────────────────────────────
+        var autoScroll = true;
+        var feedPaused = false;
+        var rowTotal = 0;
+        var MAX_ROWS = 2000;
+
+        function toggleAutoScroll() {
+            autoScroll = !autoScroll;
+            var btn = document.getElementById('autoScrollBtn');
+            btn.classList.toggle('active', autoScroll);
+            if (autoScroll) scrollToBottom();
+        }
+
+        function togglePauseFeed() {
+            feedPaused = !feedPaused;
+            var btn = document.getElementById('pauseFeedBtn');
+            btn.classList.toggle('active', feedPaused);
+            btn.textContent = feedPaused ? 'Resume Feed' : 'Pause Feed';
+            var dot = document.getElementById('liveDot');
+            dot.classList.toggle('paused', feedPaused);
+            document.getElementById('liveLabel').textContent = feedPaused ? 'Paused' : 'Live';
+        }
+
+        function scrollToBottom() {
+            var el = document.getElementById('tableScroll');
+            el.scrollTop = el.scrollHeight;
+        }
+
+        function updateRowCount() {
+            document.getElementById('rowCount').textContent = rowTotal + ' rows';
+        }
+
+        // ── Helpers ──────────────────────────────────
+        function stateClass(state) {
+            switch (state) {
+                case 'RUNNING': return 'state-running';
+                case 'PAUSE':   return 'state-pause';
+                case 'FAILED':  return 'state-failed';
+                case 'FINISH':  return 'state-finish';
+                case 'IDLE':    return 'state-idle';
+                case 'PREPARE': return 'state-prepare';
+                default: return '';
+            }
+        }
+
+        function formatTime(iso) {
+            if (!iso) return '--';
+            var d = new Date(iso);
+            if (isNaN(d.getTime())) {
+                // Try extracting time portion from ISO string
+                var parts = iso.split('T');
+                return parts.length > 1 ? parts[1].substring(0, 8) : iso;
+            }
+            return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        }
+
+        function formatEta(min) {
+            if (!min || min <= 0) return '--';
+            min = parseInt(min);
+            if (isNaN(min)) return '--';
+            if (min < 60) return min + 'm';
+            var h = Math.floor(min / 60);
+            var m = min % 60;
+            return h + 'h ' + (m < 10 ? '0' : '') + m + 'm';
+        }
+
+        // ── Build a table row from CSV-style data ────
+        function createRow(d, isNew) {
+            var tr = document.createElement('tr');
+            if (isNew) tr.className = 'new-row';
+
+            var state = d.print_state || d.gcode_state || 'UNKNOWN';
+
+            var cells = [
+                { text: formatTime(d.timestamp || ''), cls: '' },
+                { text: state, cls: stateClass(state) },
+                { text: (d.layer_current || '0') + '/' + (d.layer_total || '0'), cls: '' },
+                { text: (d.percent_complete || '0') + '%', cls: '' },
+                { text: d.nozzle_temp || '--', cls: 'temp-nozzle' },
+                { text: d.nozzle_target || '--', cls: 'temp-nozzle' },
+                { text: d.bed_temp || '--', cls: 'temp-bed' },
+                { text: d.bed_target || '--', cls: 'temp-bed' },
+                { text: d.print_speed || '--', cls: '' },
+                { text: d.fan_speed || '--', cls: '' },
+                { text: formatEta(d.time_remaining_min), cls: '' },
+            ];
+
+            cells.forEach(function(c) {
+                var td = document.createElement('td');
+                td.textContent = c.text;
+                if (c.cls) td.className = c.cls;
+                tr.appendChild(td);
+            });
+
+            return tr;
+        }
+
+        function trimRows() {
+            var tbody = document.getElementById('telemBody');
+            while (tbody.children.length > MAX_ROWS) {
+                tbody.removeChild(tbody.firstChild);
+                rowTotal = tbody.children.length;
+            }
+        }
+
+        // ── Load historical data ─────────────────────
+        fetch('/api/telemetry/recent?count=200')
+            .then(function(r) { return r.json(); })
+            .then(function(rows) {
+                var tbody = document.getElementById('telemBody');
+                tbody.textContent = '';
+
+                if (rows.length === 0) {
+                    var tr = document.createElement('tr');
+                    var td = document.createElement('td');
+                    td.colSpan = 11;
+                    td.className = 'empty-state';
+                    td.textContent = 'No telemetry data yet. Data will appear as the printer reports.';
+                    tr.appendChild(td);
+                    tbody.appendChild(tr);
+                    rowTotal = 0;
+                } else {
+                    rows.forEach(function(row) {
+                        tbody.appendChild(createRow(row, false));
+                    });
+                    rowTotal = rows.length;
+                    scrollToBottom();
+                }
+                updateRowCount();
+            })
+            .catch(function() {
+                var tbody = document.getElementById('telemBody');
+                tbody.textContent = '';
+                var tr = document.createElement('tr');
+                var td = document.createElement('td');
+                td.colSpan = 11;
+                td.className = 'empty-state';
+                td.textContent = 'Failed to load telemetry data.';
+                tr.appendChild(td);
+                tbody.appendChild(tr);
+            });
+
+        // ── SSE for live rows ────────────────────────
+        var evtSource = null;
+        var sseRetryTimer = null;
+
+        function connectSSE() {
+            if (evtSource) evtSource.close();
+            evtSource = new EventSource('/events');
+
+            evtSource.onmessage = function(event) {
+                if (feedPaused) return;
+
+                var d = JSON.parse(event.data);
+
+                // Map SSE field names to CSV-style names
+                var row = {
+                    timestamp: new Date().toISOString(),
+                    print_state: d.print_state || 'UNKNOWN',
+                    layer_current: String(d.layer_current || 0),
+                    layer_total: String(d.layer_total || 0),
+                    percent_complete: String(d.percent_complete || 0),
+                    nozzle_temp: String(d.nozzle_temp || 0),
+                    nozzle_target: String(d.nozzle_target || 0),
+                    bed_temp: String(d.bed_temp || 0),
+                    bed_target: String(d.bed_target || 0),
+                    print_speed: String(d.print_speed || 0),
+                    fan_speed: String(d.fan_speed || 0),
+                    time_remaining_min: String(d.time_remaining_min || 0),
+                };
+
+                var tbody = document.getElementById('telemBody');
+                // Clear empty state if present
+                if (tbody.children.length === 1 && tbody.children[0].querySelector('.empty-state')) {
+                    tbody.textContent = '';
+                    rowTotal = 0;
+                }
+
+                tbody.appendChild(createRow(row, true));
+                rowTotal++;
+                trimRows();
+                updateRowCount();
+
+                if (autoScroll) scrollToBottom();
+            };
+
+            evtSource.onerror = function() {
+                document.getElementById('liveDot').classList.add('paused');
+                document.getElementById('liveLabel').textContent = 'Reconnecting...';
+                evtSource.close();
+                if (!sseRetryTimer) {
+                    sseRetryTimer = setTimeout(function() {
+                        sseRetryTimer = null;
+                        connectSSE();
+                        if (!feedPaused) {
+                            document.getElementById('liveDot').classList.remove('paused');
+                            document.getElementById('liveLabel').textContent = 'Live';
+                        }
+                    }, 5000);
+                }
+            };
+        }
+
+        connectSSE();
+
+        window.addEventListener('beforeunload', function() {
+            if (evtSource) evtSource.close();
+        });
+    </script>
+</body>
+</html>

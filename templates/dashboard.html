@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bambu A1 Monitor</title>
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#0f1117">
+    <link rel="apple-touch-icon" href="/static/icon-192.png">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -125,11 +128,11 @@
         .dashboard {
             display: grid;
             grid-template-columns: 1fr 1fr 1fr;
-            grid-template-rows: auto auto auto;
             gap: 16px;
             padding: 20px 24px;
             max-width: 1400px;
             margin: 0 auto;
+            align-items: start;
         }
 
         .card {
@@ -521,6 +524,8 @@
             </div>
             <div class="nav-links">
                 <a href="/history" class="nav-link">History</a>
+                <a href="/telemetry" class="nav-link">Telemetry</a>
+                <a href="/analytics" class="nav-link">Analytics</a>
                 <a href="/gallery" class="nav-link">Snapshots</a>
                 <a href="/setup" class="settings-link" title="Settings">&#9881;</a>
                 <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle theme"></button>
@@ -1092,6 +1097,11 @@
         document.addEventListener('click', function() {
             requestNotificationPermission();
         }, { once: true });
+
+        // ── PWA Service Worker ───────────────────────
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/static/sw.js').catch(function() {});
+        }
     </script>
 </body>
 </html>

@@ -101,6 +101,21 @@ def save_config(printer_ip, access_code, serial_number):
     config_ready.set()
     log.info("Config saved — Printer: %s  SN: %s", printer_ip, serial_number)
 
+# ── SYSTEM METRICS ────────────────────────────────────────────────────────────
+_start_time = datetime.now()
+_mqtt_msg_count = 0
+_mqtt_msg_lock = threading.Lock()
+_connection_log = deque(maxlen=100)   # list of {time, event, detail}
+_connection_log_lock = threading.Lock()
+
+def log_connection_event(event: str, detail: str = ""):
+    with _connection_log_lock:
+        _connection_log.append({
+            "time": datetime.now().isoformat(),
+            "event": event,
+            "detail": detail,
+        })
+
 # ── SHARED STATE ──────────────────────────────────────────────────────────────
 telemetry = {
     "print_state": "UNKNOWN",
@@ -262,14 +277,20 @@ def telemetry_thread():
                 global mqtt_cmd_client
                 mqtt_cmd_client = c
             log.info("MQTT connected and subscribed")
+            log_connection_event("mqtt_connected", cfg["printer_ip"])
         else:
             log.error("MQTT connection failed: %s", rc)
+            log_connection_event("mqtt_failed", str(rc))
 
     def on_disconnect(c, userdata, flags, rc, properties=None):
         mqtt_connected.clear()
         log.warning("MQTT disconnected")
+        log_connection_event("mqtt_disconnected")
 
     def on_message(c, userdata, msg, properties=None):
+        global _mqtt_msg_count
+        with _mqtt_msg_lock:
+            _mqtt_msg_count += 1
         try:
             payload = json.loads(msg.payload.decode("utf-8"))
             data = parse_telemetry(payload)
@@ -432,6 +453,7 @@ def vision_thread():
 
             log.info("Camera authenticated, receiving frames")
             camera_available.set()
+            log_connection_event("camera_connected", f"{cfg['printer_ip']}:{CAMERA_PORT}")
             os.makedirs(FAILURE_DIR, exist_ok=True)
 
             with detector_settings_lock:
@@ -492,7 +514,7 @@ def vision_thread():
 
                 with vision_lock:
                     for name, (triggered, score) in results.items():
-                        vision_status[name]["triggered"] = triggered
+                        vision_status[name]["triggered"] = bool(triggered)
                         vision_status[name]["score"] = float(score)
                         vision_status[name]["count"] = trigger_counts[name]
 
@@ -511,6 +533,7 @@ def vision_thread():
 
         except Exception as e:
             log.error("Camera error: %s — retrying in 5s", e)
+            log_connection_event("camera_error", str(e))
         finally:
             camera_available.clear()
             for s in (sock, raw):
@@ -834,6 +857,217 @@ def api_set_temperature():
         log.info("%s temp set to %d", target.capitalize(), temp)
         return jsonify({"status": "ok", "target": target, "value": temp})
     return jsonify({"error": "MQTT not connected"}), 503
+
+# ── PWA ──────────────────────────────────────────────────────────────────────
+@app.route("/offline")
+def offline_page():
+    return render_template("offline.html")
+
+# ── SYSTEM STATUS API ────────────────────────────────────────────────────────
+@app.route("/status")
+def status_page():
+    if not config_ready.is_set():
+        return redirect("/")
+    cfg = get_config()
+    return render_template("status.html",
+                           printer_ip=cfg["printer_ip"],
+                           serial_number=cfg["serial_number"])
+
+@app.route("/api/system-status")
+def api_system_status():
+    import resource
+    uptime_sec = (datetime.now() - _start_time).total_seconds()
+    with _mqtt_msg_lock:
+        msg_count = _mqtt_msg_count
+    with _connection_log_lock:
+        conn_log = list(_connection_log)
+    mem_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024  # KB to MB
+    rate = msg_count / max(uptime_sec, 1) * 60  # msgs per minute
+    return jsonify({
+        "uptime_seconds": round(uptime_sec),
+        "start_time": _start_time.isoformat(),
+        "mqtt_connected": mqtt_connected.is_set(),
+        "camera_connected": camera_available.is_set(),
+        "mqtt_messages_total": msg_count,
+        "mqtt_messages_per_min": round(rate, 1),
+        "memory_mb": round(mem_mb, 1),
+        "connection_log": conn_log[-50:],
+    })
+
+# ── ANALYTICS API ────────────────────────────────────────────────────────────
+@app.route("/analytics")
+def analytics_page():
+    if not config_ready.is_set():
+        return redirect("/")
+    cfg = get_config()
+    return render_template("analytics.html",
+                           printer_ip=cfg["printer_ip"],
+                           serial_number=cfg["serial_number"])
+
+@app.route("/api/analytics")
+def api_analytics():
+    """Compute analytics from CSV: daily print counts, failure breakdown, temp stats, duration distribution."""
+    jobs = parse_jobs_from_csv()
+    # Daily print counts (last 30 days)
+    daily = {}
+    for j in jobs:
+        if j["status"] == "printing":
+            continue
+        day = j["start_time"][:10]
+        if day not in daily:
+            daily[day] = {"completed": 0, "failed": 0, "cancelled": 0}
+        daily[day][j["status"]] = daily[day].get(j["status"], 0) + 1
+    daily_sorted = sorted(daily.items())[-30:]
+
+    # Failure type breakdown
+    failure_types = {}
+    for j in jobs:
+        if j["status"] == "failed":
+            reason = j.get("failure_reason") or "Unknown"
+            failure_types[reason] = failure_types.get(reason, 0) + 1
+
+    # Duration distribution (buckets: <30m, 30-60m, 1-2h, 2-4h, 4-8h, 8h+)
+    buckets = {"< 30m": 0, "30-60m": 0, "1-2h": 0, "2-4h": 0, "4-8h": 0, "8h+": 0}
+    for j in jobs:
+        d = j.get("duration_min", 0)
+        if d < 30: buckets["< 30m"] += 1
+        elif d < 60: buckets["30-60m"] += 1
+        elif d < 120: buckets["1-2h"] += 1
+        elif d < 240: buckets["2-4h"] += 1
+        elif d < 480: buckets["4-8h"] += 1
+        else: buckets["8h+"] += 1
+
+    # Temperature stats from CSV
+    temp_stats = {"nozzle_avg": 0, "nozzle_max": 0, "bed_avg": 0, "bed_max": 0}
+    nozzle_temps = []
+    bed_temps = []
+    with csv_lock:
+        try:
+            with open(LOG_FILE, "r") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    nt = row.get("nozzle_temp", "")
+                    bt = row.get("bed_temp", "")
+                    try:
+                        nv = float(nt)
+                        if nv > 30:  # ignore cold readings
+                            nozzle_temps.append(nv)
+                    except (ValueError, TypeError):
+                        pass
+                    try:
+                        bv = float(bt)
+                        if bv > 20:
+                            bed_temps.append(bv)
+                    except (ValueError, TypeError):
+                        pass
+        except FileNotFoundError:
+            pass
+    if nozzle_temps:
+        temp_stats["nozzle_avg"] = round(sum(nozzle_temps) / len(nozzle_temps), 1)
+        temp_stats["nozzle_max"] = round(max(nozzle_temps), 1)
+    if bed_temps:
+        temp_stats["bed_avg"] = round(sum(bed_temps) / len(bed_temps), 1)
+        temp_stats["bed_max"] = round(max(bed_temps), 1)
+
+    return jsonify({
+        "daily_prints": [{"date": d, **v} for d, v in daily_sorted],
+        "failure_types": failure_types,
+        "duration_distribution": buckets,
+        "temp_stats": temp_stats,
+        "total_jobs": len(jobs),
+    })
+
+# ── PRINT COST TRACKER API ──────────────────────────────────────────────────
+@app.route("/costs")
+def costs_page():
+    if not config_ready.is_set():
+        return redirect("/")
+    cfg = get_config()
+    return render_template("costs.html",
+                           printer_ip=cfg["printer_ip"],
+                           serial_number=cfg["serial_number"])
+
+@app.route("/api/costs")
+def api_costs():
+    """Estimate print costs from job data. Uses configurable cost per hour."""
+    try:
+        cost_per_kg = float(request.args.get("cost_per_kg", 25))
+        power_cost_kwh = float(request.args.get("power_cost_kwh", 0.12))
+    except (ValueError, TypeError):
+        cost_per_kg = 25
+        power_cost_kwh = 0.12
+    printer_watts = 150  # Bambu A1 typical power draw
+
+    jobs = parse_jobs_from_csv()
+    finished = [j for j in jobs if j["status"] != "printing"]
+    total_time_h = sum(j["duration_min"] for j in finished) / 60
+    # Rough filament estimate: ~5g/min for typical prints
+    est_filament_g = sum(j["duration_min"] * 0.3 for j in finished)
+    est_filament_kg = est_filament_g / 1000
+    filament_cost = est_filament_kg * cost_per_kg
+    power_cost = total_time_h * (printer_watts / 1000) * power_cost_kwh
+    total_cost = filament_cost + power_cost
+
+    # Per-job breakdown
+    job_costs = []
+    for j in finished:
+        dur_h = j["duration_min"] / 60
+        fg = j["duration_min"] * 0.3
+        fc = (fg / 1000) * cost_per_kg
+        pc = dur_h * (printer_watts / 1000) * power_cost_kwh
+        job_costs.append({
+            "start_time": j["start_time"],
+            "duration_min": j["duration_min"],
+            "status": j["status"],
+            "est_filament_g": round(fg, 1),
+            "filament_cost": round(fc, 2),
+            "power_cost": round(pc, 2),
+            "total_cost": round(fc + pc, 2),
+        })
+
+    return jsonify({
+        "summary": {
+            "total_prints": len(finished),
+            "total_time_hours": round(total_time_h, 1),
+            "est_filament_kg": round(est_filament_kg, 2),
+            "filament_cost": round(filament_cost, 2),
+            "power_cost": round(power_cost, 2),
+            "total_cost": round(total_cost, 2),
+            "avg_cost_per_print": round(total_cost / max(len(finished), 1), 2),
+            "cost_per_kg": cost_per_kg,
+            "power_cost_kwh": power_cost_kwh,
+        },
+        "jobs": job_costs,
+    })
+
+# ── LIVE TELEMETRY VIEWER ────────────────────────────────────────────────────
+@app.route("/telemetry")
+def telemetry_page():
+    if not config_ready.is_set():
+        return redirect("/")
+    cfg = get_config()
+    return render_template("telemetry.html",
+                           printer_ip=cfg["printer_ip"],
+                           serial_number=cfg["serial_number"])
+
+@app.route("/api/telemetry/recent")
+def api_telemetry_recent():
+    """Return the most recent N rows from the CSV as JSON."""
+    try:
+        count = min(int(request.args.get("count", 200)), 2000)
+    except (ValueError, TypeError):
+        count = 200
+    rows = []
+    with csv_lock:
+        try:
+            with open(LOG_FILE, "r") as f:
+                reader = csv.DictReader(f)
+                all_rows = list(reader)
+        except FileNotFoundError:
+            all_rows = []
+    for row in all_rows[-count:]:
+        rows.append(row)
+    return jsonify(rows)
 
 # ── CSV EXPORT ───────────────────────────────────────────────────────────────
 @app.route("/api/export/csv")

@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bambu A1 Monitor — Analytics</title>
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#0f1117">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #0f1117; --bg-card: #161822; --bg-input: #1e2030;
+            --border: #2a2d3a; --text-primary: #e0e0e0; --text-secondary: #888;
+            --text-muted: #666; --text-white: #fff;
+        }
+        body.light {
+            --bg-primary: #f0f2f5; --bg-card: #ffffff; --bg-input: #e8eaed;
+            --border: #d0d3da; --text-primary: #1a1a2e; --text-secondary: #555;
+            --text-muted: #777; --text-white: #111;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg-primary); color: var(--text-primary); min-height: 100vh; }
+
+        header { background: var(--bg-card); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+        .header-left h1 { font-size: 1.3rem; font-weight: 600; color: var(--text-white); }
+        .header-left .subtitle { font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px; }
+        .header-right { display: flex; align-items: center; gap: 16px; }
+        .nav-link { color: var(--text-muted); text-decoration: none; font-size: 0.85rem; transition: color 0.2s; }
+        .nav-link:hover { color: var(--text-primary); }
+        .theme-toggle { background: none; border: none; color: var(--text-muted); font-size: 1.3rem; cursor: pointer; padding: 4px; }
+
+        .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+
+        .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+
+        .chart-card {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 20px;
+        }
+        .chart-card.full { grid-column: 1 / -1; }
+        .chart-title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-secondary); margin-bottom: 14px; }
+        .chart-container { position: relative; height: 280px; }
+
+        .temp-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+        .temp-stat { text-align: center; }
+        .temp-stat .label { font-size: 0.7rem; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; }
+        .temp-stat .value { font-size: 1.5rem; font-weight: 700; }
+        .temp-stat .value.nozzle { color: #ff7043; }
+        .temp-stat .value.bed { color: #42a5f5; }
+
+        .total-badge { font-size: 0.8rem; color: var(--text-muted); float: right; margin-top: -24px; }
+
+        .empty-state { text-align: center; padding: 60px 20px; color: var(--text-muted); grid-column: 1 / -1; }
+
+        @media (max-width: 768px) {
+            .chart-grid { grid-template-columns: 1fr; }
+            .chart-card.full { grid-column: 1; }
+            .temp-stats { grid-template-columns: repeat(2, 1fr); }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-left">
+            <h1>Analytics</h1>
+            <div class="subtitle">{{ printer_ip }} &middot; {{ serial_number }}</div>
+        </div>
+        <div class="header-right">
+            <a href="/" class="nav-link">Dashboard</a>
+            <a href="/history" class="nav-link">History</a>
+            <a href="/costs" class="nav-link">Costs</a>
+            <a href="/status" class="nav-link">Status</a>
+            <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()"></button>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="chart-grid" id="chartsArea">
+            <div class="empty-state" id="loadingState">Loading analytics...</div>
+        </div>
+    </div>
+
+    <script>
+        function applyTheme() {
+            var theme = localStorage.getItem('bambu-theme') || 'dark';
+            document.body.classList.toggle('light', theme === 'light');
+            document.getElementById('themeToggle').textContent = theme === 'light' ? '\u2600' : '\u263E';
+        }
+        function toggleTheme() {
+            var current = localStorage.getItem('bambu-theme') || 'dark';
+            localStorage.setItem('bambu-theme', current === 'dark' ? 'light' : 'dark');
+            applyTheme();
+        }
+        applyTheme();
+
+        var chartDefaults = {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: '#888', font: { size: 11 } } } },
+            scales: {
+                x: { ticks: { color: '#555', font: { size: 10 } }, grid: { color: '#1e2030' } },
+                y: { ticks: { color: '#555', font: { size: 10 } }, grid: { color: '#1e2030' }, beginAtZero: true },
+            },
+        };
+
+        fetch('/api/analytics')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                var area = document.getElementById('chartsArea');
+                area.textContent = '';
+
+                if (data.total_jobs === 0) {
+                    var empty = document.createElement('div');
+                    empty.className = 'empty-state';
+                    empty.textContent = 'No print data yet. Analytics will appear after your first print.';
+                    area.appendChild(empty);
+                    return;
+                }
+
+                // 1. Daily Prints (stacked bar)
+                var dailyCard = document.createElement('div');
+                dailyCard.className = 'chart-card full';
+                dailyCard.innerHTML = '<div class="chart-title">Daily Print Activity</div><div class="chart-container"><canvas id="dailyChart"></canvas></div>';
+                area.appendChild(dailyCard);
+
+                var dailyLabels = data.daily_prints.map(function(d) { return d.date.substring(5); });
+                new Chart(document.getElementById('dailyChart'), {
+                    type: 'bar',
+                    data: {
+                        labels: dailyLabels,
+                        datasets: [
+                            { label: 'Completed', data: data.daily_prints.map(function(d) { return d.completed || 0; }), backgroundColor: '#00c853', borderRadius: 4 },
+                            { label: 'Failed', data: data.daily_prints.map(function(d) { return d.failed || 0; }), backgroundColor: '#ff1744', borderRadius: 4 },
+                            { label: 'Cancelled', data: data.daily_prints.map(function(d) { return d.cancelled || 0; }), backgroundColor: '#ff9100', borderRadius: 4 },
+                        ],
+                    },
+                    options: Object.assign({}, chartDefaults, {
+                        scales: Object.assign({}, chartDefaults.scales, { x: Object.assign({}, chartDefaults.scales.x, { stacked: true }), y: Object.assign({}, chartDefaults.scales.y, { stacked: true }) }),
+                    }),
+                });
+
+                // 2. Duration Distribution (bar)
+                var durCard = document.createElement('div');
+                durCard.className = 'chart-card';
+                durCard.innerHTML = '<div class="chart-title">Print Duration Distribution</div><div class="chart-container"><canvas id="durChart"></canvas></div>';
+                area.appendChild(durCard);
+
+                var durLabels = Object.keys(data.duration_distribution);
+                var durValues = Object.values(data.duration_distribution);
+                new Chart(document.getElementById('durChart'), {
+                    type: 'bar',
+                    data: {
+                        labels: durLabels,
+                        datasets: [{ label: 'Prints', data: durValues, backgroundColor: '#42a5f5', borderRadius: 6 }],
+                    },
+                    options: Object.assign({}, chartDefaults, { plugins: { legend: { display: false } } }),
+                });
+
+                // 3. Failure Types (doughnut)
+                var failCard = document.createElement('div');
+                failCard.className = 'chart-card';
+                var failKeys = Object.keys(data.failure_types);
+                if (failKeys.length === 0) {
+                    failCard.innerHTML = '<div class="chart-title">Failure Breakdown</div><div style="text-align:center;padding:80px 20px;color:#666;">No failures recorded</div>';
+                } else {
+                    failCard.innerHTML = '<div class="chart-title">Failure Breakdown</div><div class="chart-container"><canvas id="failChart"></canvas></div>';
+                }
+                area.appendChild(failCard);
+
+                if (failKeys.length > 0) {
+                    var failColors = ['#ff1744', '#ff9100', '#ce93d8', '#42a5f5', '#69f0ae'];
+                    new Chart(document.getElementById('failChart'), {
+                        type: 'doughnut',
+                        data: {
+                            labels: failKeys,
+                            datasets: [{ data: Object.values(data.failure_types), backgroundColor: failColors.slice(0, failKeys.length) }],
+                        },
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: '#888', font: { size: 11 } } } } },
+                    });
+                }
+
+                // 4. Temperature Stats
+                var tempCard = document.createElement('div');
+                tempCard.className = 'chart-card full';
+                var ts = data.temp_stats;
+                tempCard.innerHTML = '<div class="chart-title">Temperature Statistics</div>' +
+                    '<div class="temp-stats">' +
+                    '<div class="temp-stat"><div class="label">Avg Nozzle</div><div class="value nozzle">' + ts.nozzle_avg + '&deg;C</div></div>' +
+                    '<div class="temp-stat"><div class="label">Max Nozzle</div><div class="value nozzle">' + ts.nozzle_max + '&deg;C</div></div>' +
+                    '<div class="temp-stat"><div class="label">Avg Bed</div><div class="value bed">' + ts.bed_avg + '&deg;C</div></div>' +
+                    '<div class="temp-stat"><div class="label">Max Bed</div><div class="value bed">' + ts.bed_max + '&deg;C</div></div>' +
+                    '</div>';
+                area.appendChild(tempCard);
+            })
+            .catch(function() {
+                var area = document.getElementById('chartsArea');
+                area.textContent = '';
+                var err = document.createElement('div');
+                err.className = 'empty-state';
+                err.textContent = 'Failed to load analytics data.';
+                area.appendChild(err);
+            });
+    </script>
+</body>
+</html>

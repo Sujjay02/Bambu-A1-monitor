@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bambu A1 Monitor — System Status</title>
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#0f1117">
+    <style>
+        :root {
+            --bg-primary: #0f1117; --bg-card: #161822; --bg-input: #1e2030;
+            --border: #2a2d3a; --text-primary: #e0e0e0; --text-secondary: #888;
+            --text-muted: #666; --text-white: #fff;
+        }
+        body.light {
+            --bg-primary: #f0f2f5; --bg-card: #ffffff; --bg-input: #e8eaed;
+            --border: #d0d3da; --text-primary: #1a1a2e; --text-secondary: #555;
+            --text-muted: #777; --text-white: #111;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg-primary); color: var(--text-primary); min-height: 100vh; }
+
+        header { background: var(--bg-card); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+        .header-left h1 { font-size: 1.3rem; font-weight: 600; color: var(--text-white); }
+        .header-left .subtitle { font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px; }
+        .header-right { display: flex; align-items: center; gap: 16px; }
+        .nav-link { color: var(--text-muted); text-decoration: none; font-size: 0.85rem; transition: color 0.2s; }
+        .nav-link:hover { color: var(--text-primary); }
+        .theme-toggle { background: none; border: none; color: var(--text-muted); font-size: 1.3rem; cursor: pointer; padding: 4px; }
+        .theme-toggle:hover { color: var(--text-primary); }
+
+        .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+
+        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+        .stat-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; text-align: center; }
+        .stat-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-secondary); margin-bottom: 8px; }
+        .stat-value { font-size: 1.8rem; font-weight: 700; color: var(--text-white); }
+        .stat-value.green { color: #00c853; }
+        .stat-value.blue { color: #42a5f5; }
+        .stat-value.orange { color: #ff9100; }
+        .stat-sub { font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; }
+
+        .section-title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-secondary); margin-bottom: 12px; }
+
+        .status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+
+        .status-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+        .status-card .label { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 6px; }
+        .status-card .value { font-size: 1rem; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+        .dot { width: 10px; height: 10px; border-radius: 50%; }
+        .dot.green { background: #00c853; box-shadow: 0 0 6px #00c85366; }
+        .dot.red { background: #ff1744; box-shadow: 0 0 6px #ff174466; }
+
+        .log-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+        .log-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; font-family: 'SF Mono', 'Consolas', monospace; }
+        .log-table th { text-align: left; padding: 10px 16px; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); border-bottom: 1px solid var(--border); background: var(--bg-input); font-family: -apple-system, sans-serif; }
+        .log-table td { padding: 8px 16px; border-bottom: 1px solid var(--border); color: var(--text-primary); }
+        .log-table tr:last-child td { border-bottom: none; }
+
+        .event-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; }
+        .event-badge.connected { background: #00c85322; color: #00c853; }
+        .event-badge.disconnected { background: #ff174422; color: #ff1744; }
+        .event-badge.error { background: #ff910022; color: #ff9100; }
+
+        .empty-row { text-align: center; color: var(--text-muted); padding: 40px 20px; }
+
+        @media (max-width: 768px) {
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .status-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-left">
+            <h1>System Status</h1>
+            <div class="subtitle">{{ printer_ip }} &middot; {{ serial_number }}</div>
+        </div>
+        <div class="header-right">
+            <a href="/" class="nav-link">Dashboard</a>
+            <a href="/analytics" class="nav-link">Analytics</a>
+            <a href="/costs" class="nav-link">Costs</a>
+            <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()"></button>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Uptime</div>
+                <div class="stat-value green" id="uptime">--</div>
+                <div class="stat-sub" id="startTime"></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">MQTT Messages</div>
+                <div class="stat-value blue" id="msgTotal">--</div>
+                <div class="stat-sub" id="msgRate"></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Message Rate</div>
+                <div class="stat-value orange" id="msgPerMin">--</div>
+                <div class="stat-sub">msgs/min</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Memory Usage</div>
+                <div class="stat-value" id="memUsage">--</div>
+                <div class="stat-sub">MB (RSS peak)</div>
+            </div>
+        </div>
+
+        <div class="status-grid">
+            <div class="status-card">
+                <div class="label">MQTT Connection</div>
+                <div class="value"><div class="dot" id="mqttDot"></div> <span id="mqttStatus">--</span></div>
+            </div>
+            <div class="status-card">
+                <div class="label">Camera Connection</div>
+                <div class="value"><div class="dot" id="camDot"></div> <span id="camStatus">--</span></div>
+            </div>
+        </div>
+
+        <div class="section-title">Connection History</div>
+        <div class="log-card">
+            <table class="log-table">
+                <thead><tr><th>Time</th><th>Event</th><th>Detail</th></tr></thead>
+                <tbody id="logBody">
+                    <tr><td colspan="3" class="empty-row">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        function applyTheme() {
+            var theme = localStorage.getItem('bambu-theme') || 'dark';
+            document.body.classList.toggle('light', theme === 'light');
+            document.getElementById('themeToggle').textContent = theme === 'light' ? '\u2600' : '\u263E';
+        }
+        function toggleTheme() {
+            var current = localStorage.getItem('bambu-theme') || 'dark';
+            localStorage.setItem('bambu-theme', current === 'dark' ? 'light' : 'dark');
+            applyTheme();
+        }
+        applyTheme();
+
+        function formatUptime(sec) {
+            var d = Math.floor(sec / 86400);
+            var h = Math.floor((sec % 86400) / 3600);
+            var m = Math.floor((sec % 3600) / 60);
+            if (d > 0) return d + 'd ' + h + 'h';
+            if (h > 0) return h + 'h ' + m + 'm';
+            return m + 'm';
+        }
+
+        function formatTime(iso) {
+            if (!iso) return '--';
+            var d = new Date(iso);
+            return d.toLocaleTimeString('en-US', { hour12: false }) + ' ' +
+                   d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }
+
+        function eventBadgeClass(event) {
+            if (event.indexOf('connected') !== -1 && event.indexOf('dis') === -1) return 'connected';
+            if (event.indexOf('disconnected') !== -1) return 'disconnected';
+            if (event.indexOf('error') !== -1 || event.indexOf('failed') !== -1) return 'error';
+            return '';
+        }
+
+        function loadStatus() {
+            fetch('/api/system-status')
+                .then(function(r) { return r.json(); })
+                .then(function(s) {
+                    document.getElementById('uptime').textContent = formatUptime(s.uptime_seconds);
+                    document.getElementById('startTime').textContent = 'Since ' + formatTime(s.start_time);
+                    document.getElementById('msgTotal').textContent = s.mqtt_messages_total.toLocaleString();
+                    document.getElementById('msgPerMin').textContent = s.mqtt_messages_per_min;
+                    document.getElementById('memUsage').textContent = s.memory_mb;
+
+                    var mqttDot = document.getElementById('mqttDot');
+                    mqttDot.className = 'dot ' + (s.mqtt_connected ? 'green' : 'red');
+                    document.getElementById('mqttStatus').textContent = s.mqtt_connected ? 'Connected' : 'Disconnected';
+
+                    var camDot = document.getElementById('camDot');
+                    camDot.className = 'dot ' + (s.camera_connected ? 'green' : 'red');
+                    document.getElementById('camStatus').textContent = s.camera_connected ? 'Connected' : 'Disconnected';
+
+                    // Connection log
+                    var tbody = document.getElementById('logBody');
+                    tbody.textContent = '';
+                    var log = s.connection_log.slice().reverse();
+                    if (log.length === 0) {
+                        var tr = document.createElement('tr');
+                        var td = document.createElement('td');
+                        td.colSpan = 3; td.className = 'empty-row';
+                        td.textContent = 'No connection events yet.';
+                        tr.appendChild(td); tbody.appendChild(tr);
+                        return;
+                    }
+                    log.forEach(function(entry) {
+                        var tr = document.createElement('tr');
+                        var tdTime = document.createElement('td');
+                        tdTime.textContent = formatTime(entry.time);
+                        tr.appendChild(tdTime);
+                        var tdEvent = document.createElement('td');
+                        var badge = document.createElement('span');
+                        badge.className = 'event-badge ' + eventBadgeClass(entry.event);
+                        badge.textContent = entry.event.replace(/_/g, ' ');
+                        tdEvent.appendChild(badge);
+                        tr.appendChild(tdEvent);
+                        var tdDetail = document.createElement('td');
+                        tdDetail.textContent = entry.detail || '--';
+                        tr.appendChild(tdDetail);
+                        tbody.appendChild(tr);
+                    });
+                })
+                .catch(function() {});
+        }
+
+        loadStatus();
+        setInterval(loadStatus, 10000);
+    </script>
+</body>
+</html>
