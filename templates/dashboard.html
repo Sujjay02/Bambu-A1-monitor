@@ -5,176 +5,283 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bambu A1 Monitor</title>
     <link rel="manifest" href="/static/manifest.json">
-    <meta name="theme-color" content="#0f1117">
+    <meta name="theme-color" content="#0a0b10">
     <link rel="apple-touch-icon" href="/static/icon-192.png">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
         :root {
-            --bg-primary: #0f1117;
-            --bg-card: #161822;
-            --bg-input: #1e2030;
-            --border: #2a2d3a;
-            --text-primary: #e0e0e0;
-            --text-secondary: #888;
-            --text-muted: #666;
-            --text-white: #fff;
-            --chart-grid: #1e2030;
+            --bg-primary: #0a0b10;
+            --bg-card: rgba(22, 24, 38, 0.7);
+            --bg-card-solid: #161826;
+            --bg-input: #1a1c2e;
+            --bg-hover: #1e2038;
+            --border: rgba(255, 255, 255, 0.06);
+            --border-hover: rgba(255, 255, 255, 0.12);
+            --text-primary: #e4e4eb;
+            --text-secondary: #8b8d9e;
+            --text-muted: #5a5c6e;
+            --text-white: #f5f5f8;
+            --chart-grid: rgba(255, 255, 255, 0.04);
+            --accent: #6c5ce7;
+            --accent-glow: rgba(108, 92, 231, 0.15);
+            --success: #00d68f;
+            --success-bg: rgba(0, 214, 143, 0.1);
+            --warning: #ffaa00;
+            --warning-bg: rgba(255, 170, 0, 0.1);
+            --danger: #ff4757;
+            --danger-bg: rgba(255, 71, 87, 0.1);
+            --info: #3b82f6;
+            --info-bg: rgba(59, 130, 246, 0.1);
+            --shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+            --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.4);
+            --radius: 16px;
+            --radius-sm: 10px;
+            --glass-blur: blur(20px);
         }
 
         body.light {
-            --bg-primary: #f0f2f5;
-            --bg-card: #ffffff;
-            --bg-input: #e8eaed;
-            --border: #d0d3da;
+            --bg-primary: #f4f5f9;
+            --bg-card: rgba(255, 255, 255, 0.85);
+            --bg-card-solid: #ffffff;
+            --bg-input: #edeef4;
+            --bg-hover: #e4e5ed;
+            --border: rgba(0, 0, 0, 0.06);
+            --border-hover: rgba(0, 0, 0, 0.12);
             --text-primary: #1a1a2e;
-            --text-secondary: #555;
-            --text-muted: #777;
-            --text-white: #111;
-            --chart-grid: #e0e0e0;
+            --text-secondary: #555670;
+            --text-muted: #8889a0;
+            --text-white: #0d0d1a;
+            --chart-grid: rgba(0, 0, 0, 0.06);
+            --shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+            --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.08);
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: var(--bg-primary);
             color: var(--text-primary);
             min-height: 100vh;
+            overflow-x: hidden;
         }
 
         /* ── Header ─────────────────────────────── */
         header {
             background: var(--bg-card);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
             border-bottom: 1px solid var(--border);
-            padding: 16px 24px;
+            padding: 14px 28px;
             display: flex;
             justify-content: space-between;
             align-items: center;
             flex-wrap: wrap;
             gap: 12px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
         }
 
         .header-left h1 {
-            font-size: 1.3rem;
-            font-weight: 600;
+            font-size: 1.15rem;
+            font-weight: 700;
             color: var(--text-white);
+            letter-spacing: -0.02em;
         }
 
         .header-left .subtitle {
-            font-size: 0.8rem;
-            color: var(--text-secondary);
+            font-size: 0.72rem;
+            color: var(--text-muted);
             margin-top: 2px;
+            font-weight: 500;
+            letter-spacing: 0.02em;
         }
 
         .header-right {
             display: flex;
             align-items: center;
-            gap: 16px;
+            gap: 12px;
         }
 
         .conn-status {
             display: flex;
             align-items: center;
-            gap: 8px;
-            font-size: 0.85rem;
+            gap: 6px;
+            font-size: 0.78rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            background: var(--bg-input);
+            padding: 6px 14px;
+            border-radius: 20px;
+            border: 1px solid var(--border);
         }
 
         .status-dot {
-            width: 10px;
-            height: 10px;
+            width: 7px;
+            height: 7px;
             border-radius: 50%;
-            background: #555;
-            transition: background 0.3s;
+            background: var(--text-muted);
+            transition: all 0.4s ease;
+            flex-shrink: 0;
         }
 
-        .status-dot.connected { background: #00c853; box-shadow: 0 0 6px #00c85366; }
-        .status-dot.disconnected { background: #ff1744; box-shadow: 0 0 6px #ff174466; }
+        .status-dot.connected { background: var(--success); box-shadow: 0 0 8px rgba(0, 214, 143, 0.5); }
+        .status-dot.disconnected { background: var(--danger); box-shadow: 0 0 8px rgba(255, 71, 87, 0.4); }
 
         .nav-links {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 4px;
         }
 
         .nav-link {
             color: var(--text-muted);
             text-decoration: none;
-            font-size: 0.85rem;
-            transition: color 0.2s;
+            font-size: 0.78rem;
+            font-weight: 500;
+            transition: all 0.2s;
+            padding: 6px 12px;
+            border-radius: 8px;
         }
-        .nav-link:hover { color: var(--text-primary); }
+        .nav-link:hover { color: var(--text-primary); background: var(--bg-hover); }
 
         .settings-link {
             color: var(--text-muted);
             text-decoration: none;
-            font-size: 1.3rem;
-            transition: color 0.2s;
+            font-size: 1.1rem;
+            transition: all 0.2s;
+            padding: 4px 8px;
+            border-radius: 8px;
         }
-        .settings-link:hover { color: var(--text-primary); }
+        .settings-link:hover { color: var(--text-primary); background: var(--bg-hover); }
 
         .theme-toggle {
-            background: none;
+            background: var(--bg-input);
             border: 1px solid var(--border);
             color: var(--text-secondary);
-            font-size: 1.1rem;
+            font-size: 0.95rem;
             cursor: pointer;
-            padding: 4px 8px;
-            border-radius: 6px;
+            padding: 5px 10px;
+            border-radius: 8px;
             transition: all 0.2s;
         }
-        .theme-toggle:hover { color: var(--text-primary); border-color: var(--text-secondary); }
+        .theme-toggle:hover { color: var(--text-primary); border-color: var(--border-hover); background: var(--bg-hover); }
 
-        /* ── Grid Layout ────────────────────────── */
+        /* ── Dashboard Grid ────────────────────── */
         .dashboard {
             display: grid;
             grid-template-columns: 1fr 1fr 1fr;
-            gap: 16px;
+            gap: 14px;
             padding: 20px 24px;
-            max-width: 1400px;
+            max-width: 1440px;
             margin: 0 auto;
             align-items: start;
         }
 
+        /* ── Card Base ─────────────────────────── */
         .card {
             background: var(--bg-card);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
             border: 1px solid var(--border);
-            border-radius: 12px;
+            border-radius: var(--radius);
             padding: 20px;
+            transition: box-shadow 0.3s ease, border-color 0.3s ease, transform 0.2s ease;
+            position: relative;
+        }
+
+        .card:hover {
+            border-color: var(--border-hover);
+            box-shadow: var(--shadow);
         }
 
         .card-title {
-            font-size: 0.75rem;
+            font-size: 0.68rem;
             text-transform: uppercase;
-            letter-spacing: 1px;
-            color: var(--text-secondary);
-            margin-bottom: 14px;
+            letter-spacing: 1.2px;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
         }
 
-        /* ── Print Status Card ──────────────────── */
+        /* ── Drag Handle ──────────────────────── */
+        .drag-handle {
+            cursor: grab;
+            padding: 2px 4px;
+            color: var(--text-muted);
+            opacity: 0;
+            transition: opacity 0.2s;
+            font-size: 0.85rem;
+            user-select: none;
+            line-height: 1;
+        }
+
+        .card:hover .drag-handle { opacity: 0.6; }
+        .drag-handle:hover { opacity: 1 !important; color: var(--text-secondary); }
+        .drag-handle:active { cursor: grabbing; }
+
+        .card.dragging {
+            opacity: 0.4;
+            transform: scale(0.97);
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px var(--accent-glow);
+        }
+
+        .card.drag-over {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px var(--accent-glow), var(--shadow-lg);
+            transform: scale(1.01);
+        }
+
+        .card.drop-animation {
+            animation: dropSettle 0.3s ease;
+        }
+
+        @keyframes dropSettle {
+            0% { transform: scale(1.03); }
+            60% { transform: scale(0.99); }
+            100% { transform: scale(1); }
+        }
+
+        /* ── Print Status Card ────────────────── */
         .card-status { grid-column: 1 / 3; }
 
         .status-grid {
             display: grid;
             grid-template-columns: 1fr 1fr 1fr 1fr;
-            gap: 16px;
+            gap: 14px;
+        }
+
+        .stat-block {
+            background: var(--bg-input);
+            border-radius: var(--radius-sm);
+            padding: 14px;
+            border: 1px solid var(--border);
         }
 
         .stat-block label {
             display: block;
-            font-size: 0.7rem;
+            font-size: 0.65rem;
             text-transform: uppercase;
+            letter-spacing: 0.8px;
             color: var(--text-muted);
-            margin-bottom: 4px;
+            margin-bottom: 6px;
+            font-weight: 600;
         }
 
         .stat-block .value {
-            font-size: 1.5rem;
+            font-size: 1.4rem;
             font-weight: 700;
             color: var(--text-white);
+            letter-spacing: -0.02em;
         }
 
         .stat-block .value.state {
-            font-size: 1.1rem;
+            font-size: 1rem;
         }
 
         .loading-pulse {
@@ -182,151 +289,207 @@
         }
         @keyframes pulse {
             0%, 100% { opacity: 1; }
-            50% { opacity: 0.4; }
+            50% { opacity: 0.3; }
         }
 
         .progress-bar-container {
             margin-top: 16px;
             background: var(--bg-input);
-            border-radius: 6px;
-            height: 8px;
+            border-radius: 8px;
+            height: 6px;
             overflow: hidden;
         }
 
         .progress-bar {
             height: 100%;
-            background: linear-gradient(90deg, #00c853, #69f0ae);
-            border-radius: 6px;
-            transition: width 0.5s ease;
+            background: linear-gradient(90deg, var(--accent), #a78bfa);
+            border-radius: 8px;
+            transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
             width: 0%;
+            position: relative;
+        }
+
+        .progress-bar::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+            animation: shimmer 2s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
         }
 
         .progress-label {
-            margin-top: 6px;
-            font-size: 0.75rem;
-            color: var(--text-secondary);
+            margin-top: 8px;
+            font-size: 0.72rem;
+            color: var(--text-muted);
             display: flex;
             justify-content: space-between;
+            font-weight: 500;
         }
 
-        /* ── Temperature Card ───────────────────── */
+        /* ── Temperature Card ─────────────────── */
         .card-temps { grid-column: 3; grid-row: 1 / 3; }
 
         .temp-row {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 10px 0;
-            border-bottom: 1px solid var(--bg-input);
+            padding: 12px 14px;
+            background: var(--bg-input);
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            margin-bottom: 8px;
         }
 
-        .temp-row:last-of-type { border-bottom: none; }
+        .temp-row:last-of-type { margin-bottom: 0; }
 
-        .temp-label { font-size: 0.85rem; color: #aaa; }
+        .temp-label {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
 
         .temp-value {
-            font-size: 1.2rem;
-            font-weight: 600;
+            font-size: 1.15rem;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
         }
 
         .temp-value .target {
-            font-size: 0.8rem;
+            font-size: 0.75rem;
             color: var(--text-muted);
             font-weight: 400;
         }
 
-        .nozzle-color { color: #ff7043; }
-        .bed-color { color: #42a5f5; }
+        .nozzle-color { color: #ff7b5c; }
+        .bed-color { color: #5b9bf5; }
 
         .chart-container {
-            margin-top: 16px;
+            margin-top: 14px;
             height: 200px;
         }
 
-        /* ── Detectors Card ─────────────────────── */
+        /* ── Detectors Card ───────────────────── */
         .card-detectors { grid-column: 1; }
 
         .detector-row {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 10px 0;
-            border-bottom: 1px solid var(--bg-input);
+            padding: 10px 12px;
+            border-radius: var(--radius-sm);
+            margin-bottom: 4px;
+            transition: background 0.2s;
         }
 
-        .detector-row:last-child { border-bottom: none; }
+        .detector-row:hover { background: var(--bg-input); }
+        .detector-row:last-of-type { margin-bottom: 0; }
 
         .detector-name {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
+            font-size: 0.85rem;
+            font-weight: 500;
         }
 
         .detector-dot {
             width: 8px;
             height: 8px;
             border-radius: 50%;
-            background: #00c853;
-            transition: background 0.3s;
+            background: var(--success);
+            transition: all 0.3s;
         }
 
         .detector-dot.alert {
-            background: #ff1744;
-            box-shadow: 0 0 8px #ff174466;
+            background: var(--danger);
+            box-shadow: 0 0 10px rgba(255, 71, 87, 0.5);
+            animation: alertPulse 1.5s ease infinite;
+        }
+
+        @keyframes alertPulse {
+            0%, 100% { box-shadow: 0 0 6px rgba(255, 71, 87, 0.4); }
+            50% { box-shadow: 0 0 14px rgba(255, 71, 87, 0.7); }
         }
 
         .detector-score {
-            font-size: 0.8rem;
+            font-size: 0.78rem;
             color: var(--text-muted);
-            font-family: monospace;
+            font-family: 'SF Mono', 'Consolas', monospace;
+            font-variant-numeric: tabular-nums;
         }
 
         .detector-count {
-            font-size: 0.75rem;
-            color: var(--text-secondary);
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            background: var(--bg-input);
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-weight: 600;
         }
 
-        /* ── Camera Card ────────────────────────── */
+        /* ── Camera Card ──────────────────────── */
         .card-camera { grid-column: 2 / 4; }
 
         .camera-frame {
             width: 100%;
-            border-radius: 8px;
-            background: #0a0b0f;
+            border-radius: var(--radius-sm);
+            background: #06070b;
             min-height: 240px;
             display: flex;
             align-items: center;
             justify-content: center;
             overflow: hidden;
+            border: 1px solid var(--border);
         }
 
         .camera-frame img {
             width: 100%;
-            border-radius: 8px;
+            border-radius: var(--radius-sm);
         }
 
         .camera-placeholder {
-            color: #444;
-            font-size: 0.9rem;
+            color: var(--text-muted);
+            font-size: 0.85rem;
             text-align: center;
             padding: 40px;
         }
 
-        /* ── Print Tuning Card ──────────────────── */
+        .camera-placeholder small {
+            opacity: 0.6;
+        }
+
+        /* ── Print Tuning Card ────────────────── */
         .card-tuning { grid-column: 1 / 4; }
 
         .tuning-grid {
             display: grid;
             grid-template-columns: 1fr 1fr 1fr;
-            gap: 20px;
+            gap: 16px;
+        }
+
+        .tuning-group {
+            background: var(--bg-input);
+            border-radius: var(--radius-sm);
+            padding: 14px;
+            border: 1px solid var(--border);
         }
 
         .tuning-group label {
             display: block;
-            font-size: 0.7rem;
+            font-size: 0.65rem;
             text-transform: uppercase;
+            letter-spacing: 0.8px;
             color: var(--text-muted);
-            margin-bottom: 8px;
+            margin-bottom: 10px;
+            font-weight: 600;
         }
 
         .tuning-input-row {
@@ -335,132 +498,189 @@
             gap: 8px;
         }
 
-        .tuning-input-row input[type="range"] { flex: 1; }
+        /* Custom range slider */
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            flex: 1;
+            height: 4px;
+            background: var(--border);
+            border-radius: 4px;
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--accent);
+            cursor: pointer;
+            box-shadow: 0 0 8px var(--accent-glow);
+            transition: transform 0.15s;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--accent);
+            border: none;
+            cursor: pointer;
+        }
 
         .tuning-input-row input[type="number"] {
-            width: 80px;
-            padding: 6px 10px;
-            background: var(--bg-input);
+            width: 72px;
+            padding: 7px 10px;
+            background: var(--bg-primary);
             border: 1px solid var(--border);
-            border-radius: 6px;
+            border-radius: 8px;
             color: var(--text-primary);
-            font-size: 0.9rem;
+            font-size: 0.85rem;
+            font-weight: 500;
+            transition: border-color 0.2s;
+        }
+
+        .tuning-input-row input[type="number"]:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
         }
 
         .tuning-value {
-            font-family: monospace;
-            font-size: 0.9rem;
-            min-width: 50px;
+            font-family: 'SF Mono', 'Consolas', monospace;
+            font-size: 0.85rem;
+            min-width: 48px;
             text-align: right;
+            color: var(--accent);
+            font-weight: 600;
         }
 
         .btn-small {
-            padding: 6px 14px;
-            font-size: 0.75rem;
+            padding: 7px 16px;
+            font-size: 0.72rem;
             font-weight: 600;
-            background: var(--bg-input);
-            color: var(--text-primary);
-            border: 1px solid var(--border);
-            border-radius: 6px;
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
             cursor: pointer;
             transition: all 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
-        .btn-small:hover { background: var(--border); }
+        .btn-small:hover { background: #5a49d6; transform: translateY(-1px); box-shadow: 0 4px 12px var(--accent-glow); }
+        .btn-small:active { transform: translateY(0); }
 
-        /* ── Detector Settings ─────────────────── */
+        /* ── Detector Settings ────────────────── */
         .settings-toggle {
             cursor: pointer;
             user-select: none;
             margin-top: 16px;
             padding-top: 12px;
-            border-top: 1px solid var(--bg-input);
-            font-size: 0.7rem;
+            border-top: 1px solid var(--border);
+            font-size: 0.68rem;
             text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 1.2px;
             color: var(--text-muted);
+            font-weight: 600;
             display: flex;
             align-items: center;
             gap: 6px;
+            transition: color 0.2s;
         }
         .settings-toggle:hover { color: var(--text-secondary); }
 
-        .settings-panel { display: none; margin-top: 12px; }
+        .settings-panel { display: none; margin-top: 14px; }
         .settings-panel.open { display: block; }
 
         .setting-row {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
             margin-bottom: 10px;
+            padding: 6px 0;
         }
 
         .setting-row label {
-            font-size: 0.8rem;
+            font-size: 0.78rem;
             width: 100px;
             color: var(--text-secondary);
+            font-weight: 500;
         }
-
-        .setting-row input[type="range"] { flex: 1; }
 
         .setting-row .setting-val {
-            font-family: monospace;
-            font-size: 0.8rem;
+            font-family: 'SF Mono', 'Consolas', monospace;
+            font-size: 0.78rem;
             min-width: 36px;
             text-align: right;
-            color: var(--text-primary);
+            color: var(--accent);
+            font-weight: 600;
         }
 
-        /* ── Controls Card ──────────────────────── */
+        /* ── Controls Card ────────────────────── */
         .card-controls {
             grid-column: 1 / 4;
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
         }
 
         .btn {
             padding: 10px 24px;
             border: none;
-            border-radius: 8px;
-            font-size: 0.85rem;
+            border-radius: var(--radius-sm);
+            font-size: 0.8rem;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.2s;
+            letter-spacing: 0.02em;
         }
 
         .btn-pause {
-            background: #ff1744;
+            background: var(--danger);
             color: #fff;
         }
-
-        .btn-pause:hover { background: #d50000; }
+        .btn-pause:hover { background: #e63e4d; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(255, 71, 87, 0.3); }
+        .btn-pause:active { transform: translateY(0); }
 
         .btn-resume {
             background: var(--bg-input);
-            color: #69f0ae;
+            color: var(--success);
             border: 1px solid var(--border);
         }
-
-        .btn-resume:hover { background: var(--border); }
+        .btn-resume:hover { background: var(--bg-hover); border-color: var(--border-hover); transform: translateY(-1px); }
+        .btn-resume:active { transform: translateY(0); }
 
         .pause-banner {
             display: none;
-            background: #ff1744;
+            background: linear-gradient(135deg, var(--danger), #ff6b6b);
             color: #fff;
-            padding: 6px 16px;
-            border-radius: 6px;
-            font-weight: 600;
-            font-size: 0.85rem;
+            padding: 8px 18px;
+            border-radius: var(--radius-sm);
+            font-weight: 700;
+            font-size: 0.78rem;
             margin-left: auto;
+            letter-spacing: 0.05em;
+            animation: bannerPulse 2s ease infinite;
         }
 
         .pause-banner.visible { display: block; }
 
-        /* ── Toast Notifications ───────────────── */
+        @keyframes bannerPulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
+        }
+
+        /* ── Toast Notifications ──────────────── */
         .toast-container {
             position: fixed;
-            top: 16px;
-            right: 16px;
+            top: 70px;
+            right: 20px;
             z-index: 1000;
             display: flex;
             flex-direction: column;
@@ -468,24 +688,74 @@
         }
         .toast {
             padding: 12px 20px;
-            border-radius: 8px;
-            font-size: 0.85rem;
+            border-radius: var(--radius-sm);
+            font-size: 0.82rem;
             font-weight: 500;
             color: #fff;
             opacity: 0;
-            transform: translateX(100%);
-            transition: all 0.3s ease;
-            max-width: 320px;
+            transform: translateX(40px);
+            transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+            max-width: 340px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1);
         }
         .toast.visible { opacity: 1; transform: translateX(0); }
-        .toast.success { background: #00c853; }
-        .toast.warning { background: #ff9100; }
-        .toast.error { background: #ff1744; }
+        .toast.success { background: rgba(0, 214, 143, 0.9); }
+        .toast.warning { background: rgba(255, 170, 0, 0.9); }
+        .toast.error { background: rgba(255, 71, 87, 0.9); }
 
-        /* ── Responsive ─────────────────────────── */
+        /* ── Edit Mode Indicator ──────────────── */
+        .edit-mode-bar {
+            display: none;
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--accent);
+            color: #fff;
+            padding: 10px 28px;
+            border-radius: 28px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            z-index: 200;
+            box-shadow: 0 8px 32px var(--accent-glow);
+            cursor: pointer;
+            transition: all 0.3s;
+            letter-spacing: 0.02em;
+        }
+
+        .edit-mode-bar.visible { display: flex; align-items: center; gap: 8px; }
+        .edit-mode-bar:hover { transform: translateX(-50%) translateY(-2px); box-shadow: 0 12px 40px rgba(108, 92, 231, 0.35); }
+
+        .edit-toggle {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: var(--bg-card-solid);
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            cursor: pointer;
+            z-index: 200;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s;
+            box-shadow: var(--shadow);
+        }
+
+        .edit-toggle:hover { border-color: var(--accent); color: var(--accent); transform: scale(1.08); }
+        .edit-toggle.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+        /* ── Responsive ───────────────────────── */
         @media (max-width: 900px) {
             .dashboard {
                 grid-template-columns: 1fr;
+                padding: 14px;
+                gap: 12px;
             }
             .card-status,
             .card-temps,
@@ -502,6 +772,14 @@
             .status-grid {
                 grid-template-columns: 1fr 1fr;
             }
+            header { padding: 12px 16px; }
+            .nav-links { flex-wrap: wrap; }
+            .conn-status { font-size: 0.72rem; padding: 5px 10px; }
+        }
+
+        @media (max-width: 480px) {
+            .status-grid { grid-template-columns: 1fr; }
+            .header-right { width: 100%; justify-content: flex-end; }
         }
     </style>
 </head>
@@ -518,8 +796,7 @@
             <div class="conn-status">
                 <div class="status-dot" id="mqttDot"></div>
                 <span id="mqttLabel">Connecting...</span>
-                &nbsp;&nbsp;
-                <div class="status-dot" id="cameraDot"></div>
+                <div class="status-dot" id="cameraDot" style="margin-left:6px;"></div>
                 <span id="cameraLabel">Camera</span>
             </div>
             <div class="nav-links">
@@ -534,11 +811,14 @@
     </header>
 
     <!-- Dashboard Grid -->
-    <div class="dashboard">
+    <div class="dashboard" id="dashboardGrid">
 
         <!-- Print Status -->
-        <div class="card card-status">
-            <div class="card-title">Print Status</div>
+        <div class="card card-status" data-card-id="status" draggable="false">
+            <div class="card-title">
+                Print Status
+                <span class="drag-handle" title="Drag to reorder">&#9776;</span>
+            </div>
             <div class="status-grid">
                 <div class="stat-block">
                     <label>State</label>
@@ -567,8 +847,11 @@
         </div>
 
         <!-- Temperatures -->
-        <div class="card card-temps">
-            <div class="card-title">Temperatures</div>
+        <div class="card card-temps" data-card-id="temps" draggable="false">
+            <div class="card-title">
+                Temperatures
+                <span class="drag-handle" title="Drag to reorder">&#9776;</span>
+            </div>
             <div class="temp-row">
                 <span class="temp-label">Nozzle</span>
                 <span class="temp-value nozzle-color">
@@ -589,8 +872,11 @@
         </div>
 
         <!-- Detectors -->
-        <div class="card card-detectors">
-            <div class="card-title">Failure Detection</div>
+        <div class="card card-detectors" data-card-id="detectors" draggable="false">
+            <div class="card-title">
+                Failure Detection
+                <span class="drag-handle" title="Drag to reorder">&#9776;</span>
+            </div>
             <div class="detector-row" id="det-Spaghetti">
                 <div class="detector-name">
                     <div class="detector-dot"></div>
@@ -645,8 +931,11 @@
         </div>
 
         <!-- Camera -->
-        <div class="card card-camera">
-            <div class="card-title">Camera Feed</div>
+        <div class="card card-camera" data-card-id="camera" draggable="false">
+            <div class="card-title">
+                Camera Feed
+                <span class="drag-handle" title="Drag to reorder">&#9776;</span>
+            </div>
             <div class="camera-frame" id="cameraFrame">
                 <div class="camera-placeholder" id="cameraPlaceholder">
                     Camera not available<br>
@@ -657,8 +946,11 @@
         </div>
 
         <!-- Print Tuning -->
-        <div class="card card-tuning">
-            <div class="card-title">Print Tuning</div>
+        <div class="card card-tuning" data-card-id="tuning" draggable="false">
+            <div class="card-title">
+                Print Tuning
+                <span class="drag-handle" title="Drag to reorder">&#9776;</span>
+            </div>
             <div class="tuning-grid">
                 <div class="tuning-group">
                     <label>Speed</label>
@@ -672,7 +964,7 @@
                     <label>Nozzle Target</label>
                     <div class="tuning-input-row">
                         <input type="number" min="0" max="300" step="5" id="nozzleTempInput" placeholder="220">
-                        <span>&deg;C</span>
+                        <span style="color:var(--text-muted);font-size:0.85rem;">&deg;C</span>
                         <button class="btn-small" onclick="setTemp('nozzle')">Set</button>
                     </div>
                 </div>
@@ -680,7 +972,7 @@
                     <label>Bed Target</label>
                     <div class="tuning-input-row">
                         <input type="number" min="0" max="120" step="5" id="bedTempInput" placeholder="60">
-                        <span>&deg;C</span>
+                        <span style="color:var(--text-muted);font-size:0.85rem;">&deg;C</span>
                         <button class="btn-small" onclick="setTemp('bed')">Set</button>
                     </div>
                 </div>
@@ -688,11 +980,17 @@
         </div>
 
         <!-- Controls -->
-        <div class="card card-controls">
+        <div class="card card-controls" data-card-id="controls" draggable="false">
             <button class="btn btn-pause" onclick="pausePrint()">Pause Print</button>
             <button class="btn btn-resume" onclick="resumePrint()">Resume Print</button>
-            <div class="pause-banner" id="pauseBanner">PRINT PAUSED — FAILURE DETECTED</div>
+            <div class="pause-banner" id="pauseBanner">PRINT PAUSED &mdash; FAILURE DETECTED</div>
         </div>
+    </div>
+
+    <!-- Edit Mode Toggle -->
+    <button class="edit-toggle" id="editToggle" onclick="toggleEditMode()" title="Rearrange cards">&#9998;</button>
+    <div class="edit-mode-bar" id="editModeBar" onclick="toggleEditMode()">
+        <span>&#10003;</span> Done Editing
     </div>
 
     <script>
@@ -722,7 +1020,7 @@
             });
             setTimeout(function() {
                 toast.classList.remove('visible');
-                setTimeout(function() { toast.remove(); }, 300);
+                setTimeout(function() { toast.remove(); }, 350);
             }, 3000);
         }
 
@@ -737,18 +1035,18 @@
 
         // ── Print State Coloring ─────────────────────
         function colorPrintState(el, state) {
-            switch (state) {
-                case 'RUNNING': el.style.color = '#00c853'; break;
-                case 'PAUSE':   el.style.color = '#ff9100'; break;
-                case 'FAILED':  el.style.color = '#ff1744'; break;
-                case 'FINISH':  el.style.color = '#69f0ae'; break;
-                case 'IDLE':    el.style.color = '#64b5f6'; break;
-                default:        el.style.color = ''; break;
-            }
+            var colors = {
+                RUNNING: 'var(--success)',
+                PAUSE: 'var(--warning)',
+                FAILED: 'var(--danger)',
+                FINISH: '#69f0ae',
+                IDLE: 'var(--info)',
+            };
+            el.style.color = colors[state] || '';
         }
 
-        // ── Temperature Chart ─────────────────────────
-        var chartGridColor = getComputedStyle(document.documentElement).getPropertyValue('--chart-grid').trim() || '#1e2030';
+        // ── Temperature Chart ────────────────────────
+        var chartGridColor = getComputedStyle(document.documentElement).getPropertyValue('--chart-grid').trim() || 'rgba(255,255,255,0.04)';
         var ctx = document.getElementById('tempChart').getContext('2d');
         var tempChart = new Chart(ctx, {
             type: 'line',
@@ -758,40 +1056,40 @@
                     {
                         label: 'Nozzle',
                         data: [],
-                        borderColor: '#ff7043',
-                        backgroundColor: '#ff704322',
+                        borderColor: '#ff7b5c',
+                        backgroundColor: 'rgba(255, 123, 92, 0.08)',
                         borderWidth: 2,
                         pointRadius: 0,
-                        tension: 0.3,
+                        tension: 0.4,
                         fill: true,
                     },
                     {
                         label: 'Nozzle Target',
                         data: [],
-                        borderColor: '#ff704366',
+                        borderColor: 'rgba(255, 123, 92, 0.3)',
                         borderWidth: 1,
                         borderDash: [4, 4],
                         pointRadius: 0,
-                        tension: 0.3,
+                        tension: 0.4,
                     },
                     {
                         label: 'Bed',
                         data: [],
-                        borderColor: '#42a5f5',
-                        backgroundColor: '#42a5f522',
+                        borderColor: '#5b9bf5',
+                        backgroundColor: 'rgba(91, 155, 245, 0.08)',
                         borderWidth: 2,
                         pointRadius: 0,
-                        tension: 0.3,
+                        tension: 0.4,
                         fill: true,
                     },
                     {
                         label: 'Bed Target',
                         data: [],
-                        borderColor: '#42a5f566',
+                        borderColor: 'rgba(91, 155, 245, 0.3)',
                         borderWidth: 1,
                         borderDash: [4, 4],
                         pointRadius: 0,
-                        tension: 0.3,
+                        tension: 0.4,
                     },
                 ],
             },
@@ -802,13 +1100,15 @@
                 scales: {
                     x: {
                         display: true,
-                        ticks: { color: '#555', maxTicksLimit: 6, font: { size: 10 } },
+                        ticks: { color: 'var(--text-muted)', maxTicksLimit: 6, font: { size: 10 } },
                         grid: { color: chartGridColor },
+                        border: { display: false },
                     },
                     y: {
                         display: true,
-                        ticks: { color: '#555', font: { size: 10 } },
+                        ticks: { color: 'var(--text-muted)', font: { size: 10 } },
                         grid: { color: chartGridColor },
+                        border: { display: false },
                         suggestedMin: 0,
                         suggestedMax: 260,
                     },
@@ -817,7 +1117,7 @@
                     legend: {
                         display: true,
                         position: 'bottom',
-                        labels: { color: '#888', boxWidth: 12, font: { size: 10 } },
+                        labels: { color: '#888', boxWidth: 10, boxHeight: 3, font: { size: 10 }, padding: 16, usePointStyle: true },
                     },
                 },
             },
@@ -850,7 +1150,6 @@
             evtSource.onmessage = function(event) {
                 var d = JSON.parse(event.data);
 
-                // Remove loading pulse on first update
                 if (firstUpdate) {
                     document.querySelectorAll('.loading-pulse').forEach(function(el) {
                         el.classList.remove('loading-pulse');
@@ -858,13 +1157,11 @@
                     firstUpdate = false;
                 }
 
-                // Connection indicators
                 setDot('mqttDot', d.mqtt_connected);
-                document.getElementById('mqttLabel').textContent = d.mqtt_connected ? 'MQTT Connected' : 'MQTT Disconnected';
+                document.getElementById('mqttLabel').textContent = d.mqtt_connected ? 'MQTT' : 'Disconnected';
                 setDot('cameraDot', d.camera_available);
-                document.getElementById('cameraLabel').textContent = d.camera_available ? 'Camera OK' : 'Camera Off';
+                document.getElementById('cameraLabel').textContent = d.camera_available ? 'Camera' : 'No Cam';
 
-                // Print status
                 var stateEl = document.getElementById('printState');
                 stateEl.textContent = d.print_state || '--';
                 colorPrintState(stateEl, d.print_state);
@@ -874,32 +1171,27 @@
                 document.getElementById('etaInfo').textContent = formatEta(d.time_remaining_min);
                 document.getElementById('fanSpeed').textContent = d.fan_speed;
 
-                // Progress
                 var pct = d.percent_complete || 0;
                 document.getElementById('progressBar').style.width = pct + '%';
                 document.getElementById('progressText').textContent = pct + '%';
 
-                // Temperatures
                 document.getElementById('nozzleTemp').textContent = d.nozzle_temp;
                 document.getElementById('nozzleTarget').textContent = d.nozzle_target;
                 document.getElementById('bedTemp').textContent = d.bed_temp;
                 document.getElementById('bedTarget').textContent = d.bed_target;
 
-                // Append to chart
                 var now = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
                 tempChart.data.labels.push(now);
                 tempChart.data.datasets[0].data.push(d.nozzle_temp);
                 tempChart.data.datasets[1].data.push(d.nozzle_target);
                 tempChart.data.datasets[2].data.push(d.bed_temp);
                 tempChart.data.datasets[3].data.push(d.bed_target);
-                // Keep last 150 points on chart
                 if (tempChart.data.labels.length > 150) {
                     tempChart.data.labels.shift();
                     tempChart.data.datasets.forEach(function(ds) { ds.data.shift(); });
                 }
                 tempChart.update();
 
-                // Detectors
                 if (d.detectors) {
                     for (var name in d.detectors) {
                         var info = d.detectors[name];
@@ -913,15 +1205,12 @@
                     }
                 }
 
-                // Update tuning placeholders with current targets
                 document.getElementById('nozzleTempInput').placeholder = d.nozzle_target || '220';
                 document.getElementById('bedTempInput').placeholder = d.bed_target || '60';
 
-                // Pause banner
                 document.getElementById('pauseBanner').classList.toggle('visible', d.print_paused);
             };
 
-            // Named SSE events for notifications
             evtSource.addEventListener('print_complete', function(event) {
                 var d = JSON.parse(event.data);
                 showToast(d.message, 'success');
@@ -949,7 +1238,6 @@
 
         connectSSE();
 
-        // Clean up SSE on page unload
         window.addEventListener('beforeunload', function() {
             if (evtSource) evtSource.close();
         });
@@ -1080,6 +1368,170 @@
             })
             .catch(function() { showToast('Failed to set temperature', 'error'); });
         }
+
+        // ── Drag & Drop Card Reordering ──────────────
+        var editMode = false;
+        var draggedCard = null;
+
+        function toggleEditMode() {
+            editMode = !editMode;
+            var grid = document.getElementById('dashboardGrid');
+            var cards = grid.querySelectorAll('.card[data-card-id]');
+            var toggleBtn = document.getElementById('editToggle');
+            var editBar = document.getElementById('editModeBar');
+
+            toggleBtn.classList.toggle('active', editMode);
+            editBar.classList.toggle('visible', editMode);
+
+            cards.forEach(function(card) {
+                card.draggable = editMode;
+                if (editMode) {
+                    card.style.cursor = 'grab';
+                } else {
+                    card.style.cursor = '';
+                }
+            });
+
+            if (editMode) {
+                showToast('Drag cards to rearrange', 'success');
+            }
+        }
+
+        // Grid column class map for restoring layout
+        var cardLayoutMap = {
+            status: 'card-status',
+            temps: 'card-temps',
+            detectors: 'card-detectors',
+            camera: 'card-camera',
+            tuning: 'card-tuning',
+            controls: 'card-controls',
+        };
+
+        (function initDragDrop() {
+            var grid = document.getElementById('dashboardGrid');
+
+            grid.addEventListener('dragstart', function(e) {
+                var card = e.target.closest('.card[data-card-id]');
+                if (!card || !editMode) return;
+                draggedCard = card;
+                card.classList.add('dragging');
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', card.dataset.cardId);
+            });
+
+            grid.addEventListener('dragend', function(e) {
+                var card = e.target.closest('.card[data-card-id]');
+                if (card) card.classList.remove('dragging');
+                grid.querySelectorAll('.card.drag-over').forEach(function(c) {
+                    c.classList.remove('drag-over');
+                });
+                draggedCard = null;
+            });
+
+            grid.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                var target = e.target.closest('.card[data-card-id]');
+                if (!target || target === draggedCard) return;
+
+                grid.querySelectorAll('.card.drag-over').forEach(function(c) {
+                    c.classList.remove('drag-over');
+                });
+                target.classList.add('drag-over');
+            });
+
+            grid.addEventListener('dragleave', function(e) {
+                var target = e.target.closest('.card[data-card-id]');
+                if (target) target.classList.remove('drag-over');
+            });
+
+            grid.addEventListener('drop', function(e) {
+                e.preventDefault();
+                var target = e.target.closest('.card[data-card-id]');
+                if (!target || !draggedCard || target === draggedCard) return;
+
+                target.classList.remove('drag-over');
+
+                // Swap DOM positions
+                var allCards = Array.from(grid.querySelectorAll('.card[data-card-id]'));
+                var dragIdx = allCards.indexOf(draggedCard);
+                var dropIdx = allCards.indexOf(target);
+
+                if (dragIdx < dropIdx) {
+                    grid.insertBefore(draggedCard, target.nextSibling);
+                } else {
+                    grid.insertBefore(draggedCard, target);
+                }
+
+                // Swap grid classes
+                var dragId = draggedCard.dataset.cardId;
+                var dropId = target.dataset.cardId;
+                var dragClass = cardLayoutMap[dragId];
+                var dropClass = cardLayoutMap[dropId];
+
+                if (dragClass && dropClass) {
+                    draggedCard.classList.remove(dragClass);
+                    target.classList.remove(dropClass);
+                    draggedCard.classList.add(dropClass);
+                    target.classList.add(dragClass);
+
+                    // Swap the map entries
+                    cardLayoutMap[dragId] = dropClass;
+                    cardLayoutMap[dropId] = dragClass;
+                }
+
+                target.classList.add('drop-animation');
+                draggedCard.classList.add('drop-animation');
+                setTimeout(function() {
+                    target.classList.remove('drop-animation');
+                    draggedCard.classList.remove('drop-animation');
+                }, 300);
+
+                // Save order
+                saveCardOrder();
+            });
+        })();
+
+        function saveCardOrder() {
+            var grid = document.getElementById('dashboardGrid');
+            var cards = grid.querySelectorAll('.card[data-card-id]');
+            var order = [];
+            cards.forEach(function(card) {
+                order.push({
+                    id: card.dataset.cardId,
+                    layoutClass: cardLayoutMap[card.dataset.cardId],
+                });
+            });
+            localStorage.setItem('bambu-card-order', JSON.stringify(order));
+        }
+
+        function restoreCardOrder() {
+            var saved = localStorage.getItem('bambu-card-order');
+            if (!saved) return;
+            try {
+                var order = JSON.parse(saved);
+                var grid = document.getElementById('dashboardGrid');
+                var cards = {};
+                grid.querySelectorAll('.card[data-card-id]').forEach(function(card) {
+                    cards[card.dataset.cardId] = card;
+                });
+
+                order.forEach(function(item) {
+                    var card = cards[item.id];
+                    if (!card) return;
+
+                    // Remove current layout class, apply saved one
+                    var currentClass = cardLayoutMap[item.id];
+                    if (currentClass) card.classList.remove(currentClass);
+                    if (item.layoutClass) card.classList.add(item.layoutClass);
+                    cardLayoutMap[item.id] = item.layoutClass;
+
+                    grid.appendChild(card);
+                });
+            } catch (e) {}
+        }
+
+        restoreCardOrder();
 
         // ── Browser Notifications ────────────────────
         function requestNotificationPermission() {
